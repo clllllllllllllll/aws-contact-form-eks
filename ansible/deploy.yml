@@ -1,0 +1,8 @@
+---
+- name: Deploy the contact form
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Stop until deployment tasks are implemented
+      ansible.builtin.fail:
+        msg: "Scaffold only: Kubernetes and controller deployment tasks are not implemented."

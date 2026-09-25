@@ -1,0 +1,2 @@
+# Pin tested versions when the application is implemented.
+# Expected: Flask, Gunicorn, psycopg, boto3.

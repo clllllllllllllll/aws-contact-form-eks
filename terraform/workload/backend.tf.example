@@ -1,0 +1,5 @@
+terraform {
+  backend "s3" {
+    # Supply the encrypted bucket, unique state key, Region, and lock settings.
+  }
+}

@@ -1,12 +1,10 @@
-# AWS Contact Form on EKS — Agent Implementation Plan
+# AWS Contact Form on EKS — Implementation Plan
 
-**Status:** Approved implementation plan. Application and infrastructure are not implemented.
+**Status:** Design agreed; application and infrastructure are not implemented.
 
 **Objective:** Deploy a Flask contact form accepting name, email and message, with persistence in RDS PostgreSQL. Provision AWS infrastructure through Terraform and deploy the application through Ansible, entirely from the local workstation. No manual AWS Console resource provisioning.
 
-**Deadline:** Sunday 27 September 2026, 23:59 Singapore time. Target completion: 20:00, reserving the remaining time for required fixes.
-
-**Authorization:** Plan review, commit and push approved on 25 September 2026. This handoff contains planning only; start implementation on the PC when requested.
+**Official deadline:** Tuesday 29 September 2026, 18:00 Singapore time. **Personal target:** Sunday 27 September 2026, 23:59; aim to finish by 20:00 to leave time for fixes.
 
 ## 1. Resume context
 
@@ -16,7 +14,7 @@
 - Use AWS account **`203888389134`** in **Singapore, `ap-southeast-1`**.
 - AWS access is unverified. The old laptop CLI profile `cheelong` was removed; `contact-form-demo` was reported to contain an expired root login. Verify the PC's CLI identity separately.
 - Before changing anything in AWS, confirm that the login is non-root, belongs to the intended account and has the required permissions.
-- Execute phases sequentially. Mark tasks complete only after verification. Before handoff, record completed work, evidence, blockers and the exact next action in section 6.
+- Work through phases in order and mark tasks complete only after verification. Record completed work, evidence, blockers, and the next action in section 6.
 
 ## 2. Confirmed architecture
 
@@ -36,7 +34,7 @@ Deploy across two Availability Zones (AZs) in Singapore.
 | HTTPS | Buy an inexpensive domain, use Route 53 for DNS, and attach a free non-exportable ACM public certificate from Singapore to the ALB. Redirect HTTP to HTTPS. |
 | Security checks | Enable AWS Config and Security Hub's AWS Foundational Security Best Practices (FSBP) standard. Record findings, fixes and remaining exceptions. |
 
-**Hiring-manager clarification, as reported by the user:** creating the Ingress triggers ALB creation. Terraform creates the network and IAM prerequisites. Ansible installs the AWS Load Balancer Controller and applies the Ingress. The controller owns the ALB, listeners and target groups; Terraform must not create a second ALB.
+**Evaluator clarification:** creating the Ingress triggers ALB creation. Terraform creates the network and IAM prerequisites. Ansible installs the AWS Load Balancer Controller and applies the Ingress. The controller owns the ALB, listeners and target groups; Terraform must not create a second ALB.
 
 **Traffic paths:**
 
@@ -209,11 +207,11 @@ Declare retained prerequisites: domain/DNS, state backend, required foundation e
 
 ## 6. Progress and next action
 
-**Completed:** requirements discussion, laptop repository checks, confirmed architecture, two independent reviews of an earlier draft, final review against the assignment brief and user approval. The final design creates a fresh database on every full rebuild; snapshot restoration is excluded.
+**Completed:** requirements review, repository checks, architecture decisions, and diagram. Full rebuilds create a fresh database; snapshot restoration is excluded.
 
 **Pending:** non-root AWS verification, domain purchase, cost estimate, implementation, deployment and rehearsal.
 
-**Next action on the PC:** fetch/pull the approved plan from `origin/main` without overwriting local changes. Read this file and repository instructions, verify the checkout and begin Phase 0 when implementation is requested. Confirm non-root access to account `203888389134` before provisioning any AWS resources.
+**Next action:** confirm non-root access to account `203888389134` and estimate costs before provisioning any AWS resources. On another workstation, sync the repository without overwriting local changes, then start Phase 0.
 
 ## References
 

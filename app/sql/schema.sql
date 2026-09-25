@@ -1,0 +1,1 @@
+-- Contact submissions table will be defined here.

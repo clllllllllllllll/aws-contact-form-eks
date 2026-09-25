@@ -1,0 +1,8 @@
+---
+- name: Remove the contact form before Terraform destroy
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Stop until cleanup tasks are implemented
+      ansible.builtin.fail:
+        msg: "Scaffold only: Ingress and DNS cleanup tasks are not implemented."

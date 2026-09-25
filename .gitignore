@@ -1,0 +1,26 @@
+# Local secrets and credentials
+.env
+.env.*
+!.env.example
+*.key
+kubeconfig
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Terraform local data and plans
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!*.tfvars.example
+*.tfbackend
+
+# Editor and OS
+.DS_Store
+.vscode/
