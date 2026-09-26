@@ -8,7 +8,7 @@ The three roots have different lifecycles:
 | `foundation/` | Drafted and locally validated; not applied | Resources retained between workload teardown and redeployment |
 | `workload/` | Drafted and locally validated; not applied | Disposable VPC, EKS, RDS, IAM, ECR, and application secret metadata |
 
-Bootstrap's state is local at `bootstrap/terraform.tfstate` and excluded from Git. Preserve it securely. Foundation and workload both declare S3 backends, with distinct `foundation/terraform.tfstate` and `workload/terraform.tfstate` keys. Neither root has been applied; the last verified checkpoint had no state object for either root. Recheck state before the first live init on each workstation.
+Bootstrap's state is local at `bootstrap/terraform.tfstate` and excluded from Git. Preserve it securely. Foundation and workload both declare S3 backends, with distinct `foundation/terraform.tfstate` and `workload/terraform.tfstate` keys. Neither root has been applied per the project record, and no local state files were present at this checkpoint; remote S3 state has not been freshly verified. Recheck state before the first live init on each workstation.
 
 The bootstrap plan reported `No changes` while the temporary bucket-setup policy was attached. That policy was then removed. To refresh or plan `terraform/bootstrap/` again, temporarily restore its setup/read permissions; the ongoing state-access policy alone only covers the foundation and workload S3 state objects and locks. Do not reapply or destroy bootstrap without reviewing the plan. Test the separate backend access using the ongoing state-access policy alone. Reattach the setup policy temporarily for deliberate bootstrap maintenance. Full state-bucket teardown also requires removing prevent_destroy and granting explicit deletion permissions after foundation and workload are gone.
 
@@ -29,13 +29,15 @@ aws s3api list-object-versions --profile contact-form-deployer --region ap-south
 
 Inspect the exact state keys, including current versions and delete markers; the prefix also matches lockfiles. The ongoing state-access policy includes `s3:ListBucketVersions`. If local state is absent and the remote check is clear, use ordinary `terraform -chdir=terraform/foundation init` or `terraform -chdir=terraform/workload init`. An existing current S3 state must be reused and checked with `terraform state list` before planning. If local state exists and the corresponding S3 key has no version history, keep a private backup and use `terraform init -migrate-state` for that root, then verify the migrated resources. If both copies exist, the exact key has a delete marker or older version but no current state, or an S3 check fails, stop and reconcile before init. Do not use `-reconfigure` or `-force-copy` to bypass a state conflict. No migration or live backend init has been run for this checkpoint.
 
+The fixed-name RDS `postgresql` and `upgrade` log groups now belong to foundation. Before either root's next apply, inspect both actual states for `aws_cloudwatch_log_group.rds` addresses. If workload state tracks either group, stop and arrange a deliberate, reviewed cross-root state migration or import with state backups; do not allow a workload plan to destroy it or assume this code move transfers state. If foundation state already tracks a group, verify that ownership and avoid duplicate management. Apply foundation and verify its `rds_log_group_names` output before planning workload.
+
 ## Foundation stages
 
 Each checked-in stage file sets all three feature flags. The flags have no defaults; `plan -input=false` fails if a stage file is omitted instead of prompting for values. Select the next stage only after reviewing the account-wide service inventory, Terraform ownership, DNS delegation, and cost as applicable:
 
 | Stage file under `foundation/stages/` | Use when |
 | --- | --- |
-| `01-base.tfvars` | Initial DNS zone, evidence bucket, and retained EKS log group |
+| `01-base.tfvars` | Initial DNS zone, evidence bucket, and retained EKS and RDS log groups |
 | `02-security-existing-trail.tfvars` | Config and Security Hub can be managed here; a suitable management-event trail already exists |
 | `02-security-project-trail.tfvars` | Config and Security Hub can be managed here; a new project trail is needed |
 | `03-ready-existing-trail.tfvars` | Registrar delegation is verified; continue the existing-trail branch and request the ACM certificate |

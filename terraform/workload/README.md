@@ -32,7 +32,7 @@ The reviewed saved plan embeds these inputs. For teardown, use `plan -destroy -i
 
 ## Lifecycle
 
-The foundation owns `/aws/eks/contact-form-eks/cluster` so audit events survive runtime teardown until their seven-day retention expires. The cluster name is fixed to match that group. The setup Job and Flask use distinct IRSA roles. The app can read only the application secret; the setup Job can read the RDS master secret and read/write the app secret.
+The foundation owns `/aws/eks/contact-form-eks/cluster` and the fixed-name RDS `postgresql` and `upgrade` log groups with seven-day retention, so their logs survive runtime teardown. Workload planning requires the foundation's `rds_log_group_names` output to match both expected names. Check both actual states for prior RDS log-group ownership and complete any deliberate state handoff before applying; see [backend initialization](../README.md#backend-initialization). The setup Job and Flask use distinct IRSA roles. The app can read only the application secret; the setup Job can read the RDS master secret and read/write the app secret.
 
 Before `terraform destroy`, Ansible must remove the application DNS alias and Ingress, then wait until the controller has deleted the ALB and target groups. Destroying this root deliberately deletes RDS and all submissions, the worker instances, NAT gateways, ECR images, and runtime secrets. Keep the foundation and state bucket. Check AWS for orphaned ALBs, NAT gateways, EIPs and RDS instances after destroy.
 

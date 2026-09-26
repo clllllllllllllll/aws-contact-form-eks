@@ -17,3 +17,7 @@ output "evidence_bucket_name" {
 output "eks_log_group_name" {
   value = aws_cloudwatch_log_group.eks.name
 }
+
+output "rds_log_group_names" {
+  value = { for export, group in aws_cloudwatch_log_group.rds : export => group.name }
+}

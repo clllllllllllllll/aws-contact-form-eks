@@ -6,12 +6,6 @@ resource "aws_db_subnet_group" "main" {
 
 # RDS generates and manages the master password. Terraform receives only
 # the secret ARN and never stores the password value in its state.
-resource "aws_cloudwatch_log_group" "rds" {
-  for_each          = toset(["postgresql", "upgrade"])
-  name              = "/aws/rds/instance/contact-form-postgres/${each.key}"
-  retention_in_days = 7
-}
-
 resource "aws_db_instance" "main" {
   identifier                      = "contact-form-postgres"
   engine                          = "postgres"
@@ -38,7 +32,17 @@ resource "aws_db_instance" "main" {
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
   copy_tags_to_snapshot           = true
   tags                            = { Name = "contact-form-postgres" }
-  depends_on                      = [aws_route_table_association.database, aws_cloudwatch_log_group.rds]
+  depends_on                      = [aws_route_table_association.database]
+
+  lifecycle {
+    precondition {
+      condition = alltrue([
+        for export in ["postgresql", "upgrade"] :
+        try(data.terraform_remote_state.foundation.outputs.rds_log_group_names[export], "") == "/aws/rds/instance/contact-form-postgres/${export}"
+      ])
+      error_message = "Apply the foundation with both retained RDS log groups before planning the workload."
+    }
+  }
 }
 
 # Metadata only. The database setup Job writes the first secret version.
