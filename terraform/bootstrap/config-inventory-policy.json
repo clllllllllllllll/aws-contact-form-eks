@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadSingaporeConfigRecorders",
+      "Effect": "Allow",
+      "Action": [
+        "config:DescribeConfigurationRecorders",
+        "config:DescribeConfigurationRecorderStatus"
+      ],
+      "Resource": "arn:aws:config:ap-southeast-1:203888389134:configuration-recorder/*/*"
+    }
+  ]
+}

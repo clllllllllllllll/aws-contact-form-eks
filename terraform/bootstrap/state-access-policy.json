@@ -1,0 +1,41 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadStateBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:ListBucket",
+        "s3:ListBucketVersions"
+      ],
+      "Resource": "arn:aws:s3:::aws-contact-form-eks-tfstate-203888389134-ap-southeast-1"
+    },
+    {
+      "Sid": "ReadWriteFoundationAndWorkloadState",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:GetObjectVersion"
+      ],
+      "Resource": [
+        "arn:aws:s3:::aws-contact-form-eks-tfstate-203888389134-ap-southeast-1/foundation/terraform.tfstate",
+        "arn:aws:s3:::aws-contact-form-eks-tfstate-203888389134-ap-southeast-1/workload/terraform.tfstate"
+      ]
+    },
+    {
+      "Sid": "ManageFoundationAndWorkloadLocks",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::aws-contact-form-eks-tfstate-203888389134-ap-southeast-1/foundation/terraform.tfstate.tflock",
+        "arn:aws:s3:::aws-contact-form-eks-tfstate-203888389134-ap-southeast-1/workload/terraform.tfstate.tflock"
+      ]
+    }
+  ]
+}
