@@ -7,10 +7,16 @@ resource "aws_instance" "relay" {
   iam_instance_profile        = aws_iam_instance_profile.relay.name
   metadata_options { http_tokens = "required" }
   root_block_device {
-    volume_size = 8
-    volume_type = "gp3"
-    encrypted   = true
+    volume_size           = 8
+    volume_type           = "gp3"
+    encrypted             = true
+    delete_on_termination = true
   }
-  tags       = { Name = "contact-form-ssm-relay" }
+  tags = { Name = "contact-form-ssm-relay" }
+  volume_tags = {
+    Name      = "contact-form-ssm-relay-root"
+    Project   = "aws-contact-form-eks"
+    Lifecycle = "workload"
+  }
   depends_on = [aws_route_table_association.app, aws_iam_role_policy_attachment.relay]
 }

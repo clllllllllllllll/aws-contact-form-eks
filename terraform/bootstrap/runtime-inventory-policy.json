@@ -9,9 +9,12 @@
         "ec2:DescribeNatGateways",
         "ec2:DescribeAddresses",
         "ec2:DescribeInstances",
+        "ec2:DescribeVolumes",
+        "ec2:DescribeSnapshots",
         "eks:ListClusters",
         "rds:DescribeDBInstances",
         "rds:DescribeDBSnapshots",
+        "rds:DescribeDBInstanceAutomatedBackups",
         "elasticloadbalancing:DescribeLoadBalancers",
         "elasticloadbalancing:DescribeTags",
         "ecr:DescribeRepositories",
@@ -23,6 +26,23 @@
           "aws:RequestedRegion": "ap-southeast-1"
         }
       }
+    },
+    {
+      "Sid": "InspectRegionalKeyInventory",
+      "Effect": "Allow",
+      "Action": "kms:ListKeys",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-southeast-1"
+        }
+      }
+    },
+    {
+      "Sid": "InspectRegionalKeyStatesAndOwnership",
+      "Effect": "Allow",
+      "Action": ["kms:DescribeKey", "kms:ListResourceTags"],
+      "Resource": "arn:aws:kms:ap-southeast-1:203888389134:key/*"
     }
   ]
 }

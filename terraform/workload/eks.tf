@@ -77,6 +77,14 @@ resource "aws_launch_template" "nodes" {
     resource_type = "instance"
     tags          = { Name = "contact-form-eks-worker" }
   }
+  tag_specifications {
+    resource_type = "volume"
+    tags = {
+      Name      = "contact-form-eks-worker-root"
+      Project   = "aws-contact-form-eks"
+      Lifecycle = "workload"
+    }
+  }
 }
 resource "aws_eks_node_group" "per_az" {
   for_each        = toset(local.azs)
