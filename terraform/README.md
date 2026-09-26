@@ -12,4 +12,6 @@ Bootstrap's state is local at `bootstrap/terraform.tfstate` and excluded from Gi
 
 The bootstrap plan reported `No changes` while the temporary bucket-setup policy was attached. That policy was then removed. To refresh or plan `terraform/bootstrap/` again, temporarily restore its setup/read permissions; the ongoing state-access policy alone only covers the foundation and workload S3 state objects and locks. Do not reapply or destroy bootstrap without reviewing the plan. Test the separate backend access using the ongoing state-access policy alone. Reattach the setup policy temporarily for deliberate bootstrap maintenance. Full state-bucket teardown also requires removing prevent_destroy and granting explicit deletion permissions after foundation and workload are gone.
 
+The read-only runtime inventory policy draft at `bootstrap/runtime-inventory-policy.json` covers the AWS Describe/List calls used by `scripts/check_residual.py` in Singapore. It is not attached. The first inventory attempt failed on missing `ec2:DescribeVpcs`; this must be resolved before claiming that teardown is clean.
+
 Review the actual Singapore cost and teardown plan separately before any foundation or workload apply.

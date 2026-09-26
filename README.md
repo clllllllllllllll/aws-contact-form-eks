@@ -28,7 +28,8 @@ Present now:
 | `README.md` | Design, intended deployment sequence, and verification checklist |
 | `ASSIGNMENT_PLAN.md` | Implementation decisions and task tracking |
 | `docs/architecture.png` | High-level architecture diagram |
-| `docs/security.md` | Template for actual controls, findings, and exceptions |
+| `docs/security.md` | Planned controls, evidence commands, actual-findings register, and demo exceptions |
+| `docs/cost.md` | Singapore cost estimate, approval gate, and post-destroy charges |
 | `app/` | Flask form, SQL schema, Docker image, local Makefile, and integration tests; verified locally |
 | `terraform/bootstrap/`, `terraform/foundation/`, `terraform/workload/` | Applied state-bucket bootstrap; foundation and workload are locally validated drafts; neither is applied |
 | `ansible/` | Draft deploy/cleanup playbooks, manifests and runbook; locally syntax checked |
@@ -66,7 +67,7 @@ The Botocore CRT extra is required for this workstation's AWS login method. The 
 
 Check that the AWS identity is not root, the account ID is correct, Docker can reach its daemon, and the SSM plugin starts. `aws configure list` shows where credentials and the default Region come from; do not paste access keys into the repository.
 
-**Do not apply foundation or workload Terraform until each tier's Singapore cost estimate and teardown plan have been reviewed and approved.** The state bucket was approved separately; with small state files and ordinary runs, its expected cost is well under US$1 for the assignment week, not a fixed fee or cap. Price the EKS cluster, two EC2 workers, two NAT gateways and data processing, the SSM relay, Multi-AZ RDS, ALB, Secrets Manager, ECR, Config/Security Hub, logs, DNS, public IPv4 addresses, and storage that remains after teardown. Check the account's credits, their expiry, and budget alerts. A US$10 monthly budget with a US$5 actual-cost email alert has been configured; it is not a hard spending cap. The full Singapore estimate and credit eligibility still need verification. Domain registration is a separate cost.
+**Do not apply foundation or workload Terraform until each tier's Singapore cost estimate and teardown plan have been reviewed and approved.** The state bucket was approved separately; with small state files and ordinary runs, its expected cost is well under US$1 for the assignment week, not a fixed fee or cap. Price the EKS cluster, two EC2 workers, two NAT gateways and data processing, the SSM relay, Multi-AZ RDS, ALB, Secrets Manager, ECR, Config/Security Hub, logs, DNS, public IPv4 addresses, and storage that remains after teardown. Check the account's credits, their expiry, and budget alerts. A US$10 monthly budget with a US$5 actual-cost email alert has been configured; it is not a hard spending cap. The current [Singapore planning estimate](docs/cost.md) is about US$5 in baseline charges for ten hours, with a US$10–20 allowance for variable charges before credits. It is neither a cap nor an AWS quote; regional rates, credit eligibility, and expiry still need verification. Domain registration is a separate cost.
 
 Never commit AWS credentials, Terraform state or plan files, kubeconfig, private keys, database passwords, or real contact-form submissions.
 
@@ -191,7 +192,7 @@ kubectl -n contact-form get deployment,pods,service,ingress -o wide
 aws securityhub get-enabled-standards --region ap-southeast-1
 ```
 
-Also check the ALB target health, HTTPS form response, a submitted row through a temporary database client inside the VPC, and survival of that row after replacing a Flask pod. Re-run the Terraform plan and Ansible deployment to test repeatability. Capture FSBP findings with timestamps and distinguish newly pending checks from passes.
+Also check the ALB target health, HTTPS form response, a submitted row through the short-lived readback Job inside the VPC, and survival of that row after replacing a Flask pod. After submitting a synthetic address such as `demo@example.com`, run `ansible-playbook -i ansible/inventory.ini ansible/verify.yml -e demo_email=demo@example.com` while the private API tunnel remains open. The Job uses the setup role and prints at most five matching rows; use synthetic data only. Re-run the Terraform plan and Ansible deployment to test repeatability. Capture FSBP findings with timestamps and distinguish newly pending checks from passes.
 
 ## Teardown and fresh rebuild
 
@@ -200,10 +201,10 @@ The runtime environment is disposable. **Destroying RDS deletes the contact-form
 1. Stop submissions. Remove the Route 53 app alias and Kubernetes Ingress through the Ansible cleanup workflow.
 2. Wait until the AWS Load Balancer Controller has deleted the ALB and target groups. Do not destroy EKS or the VPC first.
 3. Remove the remaining Kubernetes resources, close the SSM tunnel, and destroy `terraform/workload/`. The drafted command is `terraform -chdir=terraform/workload destroy`; review its targets before confirming.
-4. Verify that RDS, EKS, worker instances, ALB, NAT gateways, the relay, and unused Elastic IPs are gone. Keep only the declared foundation: state, DNS/domain, and required security evidence.
+4. Run `python3 scripts/check_residual.py --profile contact-form-deployer` after destroy. Exit 0 means no tagged runtime resources were found, 2 means resources remain, and 1 means an AWS read failed so cleanup is unproven. Inspect RDS, EKS, workers, ALB, NAT gateways, relay, Elastic IPs and retained foundation charges. Keep only the declared foundation: state, DNS/domain, and required security evidence.
 5. Rebuild from Terraform, republish the image, and rerun Ansible. Use a fresh app secret name or another tested lifecycle strategy so Secrets Manager's deletion recovery window does not block recreation. Confirm the old demo row is absent and a new submission works.
 
-Persistent foundation services can still cost money after runtime teardown. The final scripts and residual-cost check must be rehearsed before the demo.
+Persistent foundation services can still cost money after runtime teardown. The residual-cost check is drafted but has not been run against AWS. It must be rehearsed before the demo. [Cost and teardown gate](docs/cost.md) and [security evidence](docs/security.md) cover remaining charges and findings.
 
 ## Reference documentation
 
