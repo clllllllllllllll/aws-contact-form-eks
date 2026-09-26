@@ -1,1 +1,11 @@
-# Add a pinned AWS provider and account/Region checks before implementation.
+provider "aws" {
+  region              = var.aws_region
+  allowed_account_ids = [var.aws_account_id]
+  default_tags {
+    tags = {
+      Project   = "aws-contact-form-eks"
+      ManagedBy = "Terraform"
+      Lifecycle = "foundation"
+    }
+  }
+}

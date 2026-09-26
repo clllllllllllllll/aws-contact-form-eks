@@ -1,6 +1,6 @@
 # AWS Contact Form on EKS — Implementation Plan
 
-**Status:** Design agreed; the application is verified locally. The Terraform state bucket is applied and verified in AWS. Foundation/workload infrastructure and the application have not been deployed.
+**Status:** The application is verified locally. The state bucket is applied and verified in AWS. Foundation Terraform is drafted and locally validated, but not applied. Workload infrastructure and the application have not been deployed.
 
 **Objective:** Deploy a Flask contact form accepting name, email and message, with persistence in RDS PostgreSQL. Provision AWS infrastructure through Terraform and deploy the application through Ansible, entirely from the local workstation. Application infrastructure is provisioned from the workstation, not manually in the AWS Console. Initial IAM access policies were attached in the Console as an account prerequisite.
 
@@ -59,7 +59,7 @@ Availability rationale: separate managed node groups enforce one worker per AZ; 
 
 **Budget:** approximately US$140 AWS credits; initial usage target US$10 drawn from those credits. The agreed Multi-AZ design has not been priced. Estimate Singapore costs and verify credit eligibility/expiry before deployment.
 
-**Domain:** separate cash purchase accepted. Planning example: standard Porkbun `.xyz`, US$2.04 for year one. Verify current registration and renewal prices.
+**Domain:** `cheelong.xyz` was registered through Exabytes. Registrar nameserver delegation to the planned Route 53 hosted zone is still pending; do not claim DNS or HTTPS works yet.
 
 Destroy runtime infrastructure between work sessions. **Every full rebuild creates a new, empty RDS database.** Submissions are disposable demo data and are intentionally deleted with RDS. They must still survive pod restarts and application redeployments while that database exists. This replaces the earlier requirement to retain submissions across teardown.
 
@@ -212,9 +212,9 @@ Declare retained prerequisites: domain/DNS, state backend, required foundation e
 
 **AWS bootstrap completed (26 September 2026):** the scoped `ContactFormTerraformStateAccess` and temporary `ContactFormTerraformBucketSetup` inline policies were attached to the non-root deployer; the temporary policy was removed after bootstrap verification. Terraform created the S3 state bucket in account `203888389134`, Region `ap-southeast-1`. The first apply created the bucket but lacked `s3:GetBucketAcl`; after adding the provider's required read actions, the bucket was confirmed in AWS, its taint was safely removed from local state, and a second apply configured the five remaining settings. A fresh Terraform plan reported `No changes`. Direct AWS reads verified versioning, four public-access blocks, SSE-S3 `AES256`, enforced bucket ownership, and the deny-insecure-transport policy. The bootstrap state is local, Git-ignored, and restricted to owner-only mode `600`; no foundation/workload state objects have been written.
 
-**Pending:** check ongoing backend access after removing the temporary bucket-setup policy; preserve a secure backup of the local bootstrap state; verify the SSM plugin, Singapore quotas and full-stack cost estimate, credit eligibility, domain purchase, foundation/workload Terraform and Ansible implementation, AWS deployment, security findings, teardown/rebuild, and laptop rehearsal. No EKS, RDS, NAT, ALB, or application AWS infrastructure has been provisioned.
+**Pending:** check ongoing backend access after removing the temporary bucket-setup policy; preserve a secure backup of the local bootstrap state; verify the SSM plugin, Singapore quotas and full-stack cost estimate, credit eligibility, domain nameserver delegation and certificate validation, foundation apply, workload Terraform and Ansible implementation, AWS deployment, security findings, teardown/rebuild, and laptop rehearsal. No EKS, RDS, NAT, ALB, or application AWS infrastructure has been provisioned.
 
-**Next action:** wait for S3 versioning to propagate before the first backend state write; verify backend access through the ongoing state-access policy. Price and implement the persistent foundation tier before its separate cost approval and apply. Do not apply paid foundation or workload resources without explicit cost confirmation.
+**Next action:** wait for S3 versioning to propagate before the first backend state write; verify backend access through the ongoing state-access policy. Review the drafted foundation tier, price it, and obtain separate cost approval before apply. Do not apply paid foundation or workload resources without explicit cost confirmation.
 
 ## References
 
