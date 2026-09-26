@@ -79,15 +79,12 @@ resource "aws_iam_role_policy_attachment" "cni" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
 }
 
-# The restricted policy is derived from vendored upstream v2.14.1.
+# The scoped inline policy follows the vendored upstream v2.14.1 action set.
 # Terraform owns ALB/node security group rules; the controller cannot change SGs.
-resource "aws_iam_policy" "controller" {
+resource "aws_iam_role_policy" "controller" {
   name   = "contact-form-alb-controller"
-  policy = file("${path.module}/policies/controller-policy-restricted.json")
-}
-resource "aws_iam_role_policy_attachment" "controller" {
-  role       = aws_iam_role.irsa["controller"].name
-  policy_arn = aws_iam_policy.controller.arn
+  role   = aws_iam_role.irsa["controller"].id
+  policy = jsonencode(local.controller_policy)
 }
 
 resource "aws_iam_role_policy" "app_secret" {

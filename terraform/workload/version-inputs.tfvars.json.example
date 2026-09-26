@@ -1,0 +1,10 @@
+{
+  "kubernetes_version": "REPLACE_WITH_VERIFIED_EKS_MINOR",
+  "addon_versions": {
+    "vpc_cni": "REPLACE_WITH_VERIFIED_VPC_CNI_VERSION",
+    "kube_proxy": "REPLACE_WITH_VERIFIED_KUBE_PROXY_VERSION",
+    "coredns": "REPLACE_WITH_VERIFIED_COREDNS_VERSION"
+  },
+  "node_release_version": "REPLACE_WITH_VERIFIED_AL2023_NODE_RELEASE",
+  "relay_ami_id": "REPLACE_WITH_VERIFIED_AL2023_RELAY_AMI_ID"
+}

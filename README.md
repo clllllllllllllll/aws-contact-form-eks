@@ -115,12 +115,14 @@ terraform -chdir=terraform/foundation show -no-color foundation.tfplan
 terraform -chdir=terraform/foundation apply foundation.tfplan
 ```
 
-After inventory and ownership review, choose either `stages/02-security-existing-trail.tfvars` or `stages/02-security-project-trail.tfvars` and repeat the foundation plan/show/apply commands. Once registrar delegation is verified, use the matching `stages/03-ready-*.tfvars` file to request and validate the certificate. Keep the latest selected stage for later foundation plans. After stage 03 completes and the workload state check is clear, initialize and plan the disposable root:
+After inventory and ownership review, choose either `stages/02-security-existing-trail.tfvars` or `stages/02-security-project-trail.tfvars` and repeat the foundation plan/show/apply commands. Once registrar delegation is verified, use the matching `stages/03-ready-*.tfvars` file to request and validate the certificate. Keep the latest selected stage for later foundation plans. After stage 03 completes, complete the [read-only preflight](docs/preflight.md) to save `.local/verified-workload.tfvars.json`. After the workload state check is clear, initialize and plan the disposable root:
 
 ```bash
 terraform -chdir=terraform/workload init
-terraform -chdir=terraform/workload plan -input=false
-terraform -chdir=terraform/workload apply
+WORKLOAD_VARS="$PWD/.local/verified-workload.tfvars.json"
+terraform -chdir=terraform/workload plan -input=false -var-file="$WORKLOAD_VARS" -out=workload.tfplan
+terraform -chdir=terraform/workload show -no-color workload.tfplan
+terraform -chdir=terraform/workload apply workload.tfplan
 ```
 
 After the workload is applied and the tunnel works, the draft deployment command is:
@@ -204,7 +206,7 @@ The runtime environment is disposable. **Destroying RDS deletes the contact-form
 
 1. Stop submissions. Remove the Route 53 app alias and Kubernetes Ingress through the Ansible cleanup workflow.
 2. Wait until the AWS Load Balancer Controller has deleted the ALB and target groups. Do not destroy EKS or the VPC first.
-3. Remove the remaining Kubernetes resources, close the SSM tunnel, and destroy `terraform/workload/`. The drafted command is `terraform -chdir=terraform/workload destroy`; review its targets before confirming.
+3. Remove the remaining Kubernetes resources, close the SSM tunnel, and destroy `terraform/workload/`. From the repository root, set `WORKLOAD_VARS="$PWD/.local/verified-workload.tfvars.json"`, then run `terraform -chdir=terraform/workload plan -destroy -input=false -var-file="$WORKLOAD_VARS" -out=workload-destroy.tfplan`. Review with `terraform -chdir=terraform/workload show -no-color workload-destroy.tfplan`; only then run `terraform -chdir=terraform/workload apply workload-destroy.tfplan`. The saved plan carries the verified version inputs.
 4. Run `python3 scripts/check_residual.py --profile contact-form-deployer` after destroy. Exit 0 means no tagged runtime resources were found, 2 means resources remain, and 1 means an AWS read failed so cleanup is unproven. Inspect RDS, EKS, workers, ALB, NAT gateways, relay, Elastic IPs and retained foundation charges. Keep only the declared foundation: state, DNS/domain, and required security evidence.
 5. Rebuild from Terraform, republish the image, and rerun Ansible. Use a fresh app secret name or another tested lifecycle strategy so Secrets Manager's deletion recovery window does not block recreation. Confirm the old demo row is absent and a new submission works.
 

@@ -44,12 +44,14 @@ resource "aws_eks_access_policy_association" "deployer" {
 resource "aws_eks_addon" "vpc_cni" {
   cluster_name             = aws_eks_cluster.main.name
   addon_name               = "vpc-cni"
+  addon_version            = var.addon_versions.vpc_cni
   service_account_role_arn = aws_iam_role.irsa["cni"].arn
   depends_on               = [aws_iam_role_policy_attachment.cni]
 }
 resource "aws_eks_addon" "kube_proxy" {
-  cluster_name = aws_eks_cluster.main.name
-  addon_name   = "kube-proxy"
+  cluster_name  = aws_eks_cluster.main.name
+  addon_name    = "kube-proxy"
+  addon_version = var.addon_versions.kube_proxy
 }
 
 resource "aws_launch_template" "nodes" {
@@ -69,7 +71,7 @@ resource "aws_launch_template" "nodes" {
   }
   metadata_options {
     http_tokens                 = "required"
-    http_put_response_hop_limit = 2
+    http_put_response_hop_limit = 1
   }
   tag_specifications {
     resource_type = "instance"
@@ -85,6 +87,7 @@ resource "aws_eks_node_group" "per_az" {
   capacity_type   = "ON_DEMAND"
   instance_types  = [var.node_instance_type]
   ami_type        = "AL2023_x86_64_STANDARD"
+  release_version = var.node_release_version
   labels          = { demo_az = each.key }
   scaling_config {
     desired_size = 1
@@ -106,7 +109,8 @@ resource "aws_eks_node_group" "per_az" {
   ]
 }
 resource "aws_eks_addon" "coredns" {
-  cluster_name = aws_eks_cluster.main.name
-  addon_name   = "coredns"
-  depends_on   = [aws_eks_node_group.per_az]
+  cluster_name  = aws_eks_cluster.main.name
+  addon_name    = "coredns"
+  addon_version = var.addon_versions.coredns
+  depends_on    = [aws_eks_node_group.per_az]
 }

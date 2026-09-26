@@ -37,9 +37,11 @@ A second playbook run must keep the same image digest and database credential wh
 Keep the SSM tunnel running. Stop sending form submissions, then run:
 
     ansible-playbook -i ansible/inventory.ini ansible/teardown.yml
-    AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/workload plan -destroy
+    WORKLOAD_VARS="$PWD/.local/verified-workload.tfvars.json"
+    terraform -chdir=terraform/workload plan -destroy -input=false -var-file="$WORKLOAD_VARS" -out=workload-destroy.tfplan
+    terraform -chdir=terraform/workload show -no-color workload-destroy.tfplan
 
-The playbook verifies the account, deletes only an alias pointing to this controller-owned ALB, removes the Ingress, and waits for ALB deletion. It then removes the controller and application namespace. Review the Terraform destroy plan before running terraform -chdir=terraform/workload destroy. A full workload destroy intentionally deletes RDS and demo submissions; the state bucket and foundation remain.
+The playbook verifies the account, deletes only an alias pointing to this controller-owned ALB, removes the Ingress, and waits for ALB deletion. It then removes the controller and application namespace. Review the Terraform destroy plan before running `terraform -chdir=terraform/workload apply workload-destroy.tfplan`. The saved plan contains the verified version inputs. A full workload destroy intentionally deletes RDS and demo submissions; the state bucket and foundation remain.
 
 The DNS helper saves a non-secret ownership record at .local/alb-alias.json. That record lets cleanup remove this exact alias if the ALB has already disappeared; an unrelated record is rejected. Keep the record on the workstation that deployed the site until cleanup is complete. If ALB deletion does not complete, the playbook stops. Investigate the controller and AWS resource state before destroying EKS or the VPC. After workload destroy, run `python3 scripts/check_residual.py --profile contact-form-deployer`. Exit 0 reports no runtime resources; exit 2 lists remaining resources; exit 1 means an inventory call failed and must not be interpreted as clean. The cleanup path has not yet been tested live.
 

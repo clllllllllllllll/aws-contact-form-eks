@@ -54,3 +54,17 @@ terraform -chdir=terraform/foundation apply foundation.tfplan
 ```
 
 For each later stage, set `FOUNDATION_STAGE` to its table entry and repeat the plan, show, and apply commands. Apply only a newly generated plan after reviewing its resource changes; stop if planning fails. The ignored plan file is local and may contain sensitive deployment details. Workload planning follows a completed certificate stage and its own backend check.
+
+## Workload version inputs
+
+Before the first workload plan, run the [read-only preflight](../docs/preflight.md) with chosen versions. It writes `.local/verified-workload.tfvars.json` only after every required read succeeds. From the repository root, after the backend check and foundation certificate stage:
+
+```bash
+WORKLOAD_VARS="$PWD/.local/verified-workload.tfvars.json"
+terraform -chdir=terraform/workload init
+terraform -chdir=terraform/workload plan -input=false -var-file="$WORKLOAD_VARS" -out=workload.tfplan
+terraform -chdir=terraform/workload show -no-color workload.tfplan
+terraform -chdir=terraform/workload apply workload.tfplan
+```
+
+The saved plan includes the version inputs. For teardown, remove the ALB through Ansible first, then use the same verified file for `plan -destroy -input=false -var-file="$WORKLOAD_VARS" -out=workload-destroy.tfplan`; inspect it with `show` and apply that saved plan. Keep the verified file securely with the workstation's deployment records through teardown and rebuild.

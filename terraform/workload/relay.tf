@@ -1,8 +1,5 @@
-data "aws_ssm_parameter" "al2023" {
-  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
-}
 resource "aws_instance" "relay" {
-  ami                         = data.aws_ssm_parameter.al2023.value
+  ami                         = var.relay_ami_id
   instance_type               = var.relay_instance_type
   subnet_id                   = aws_subnet.app[local.azs[0]].id
   associate_public_ip_address = false

@@ -8,14 +8,27 @@ The intended runtime contains a VPC across two AZs, two public ALB/NAT subnets, 
 
 ## Controller and Ingress contract
 
-The controller IAM policy is derived from the pinned upstream v2.14.1 policy. It omits security-group mutations and unused WAF/Shield mutations. Ansible must install chart `1.14.0` with `image.tag=v2.14.1` and `enableBackendSecurityGroup=false` and `enableManageBackendSecurityGroupRules=false`. The Ingress must:
+The controller role has an inline IAM policy using exact account and region ARNs plus the cluster and Ingress stack ownership tags for writes. The inline form fits IAM's 10,240-character aggregate role limit; the rendered size must be checked before deployment. It omits security-group mutations and unused capacity reservation, WAF, Shield, and Cognito permissions. The pinned controller v2.14.1 sends listener and rule tags in its create calls; create-time `AddTags` is scoped to the matching creation actions. Ansible must install chart `1.14.0` with `image.tag=v2.14.1` and `enableBackendSecurityGroup=false` and `enableManageBackendSecurityGroupRules=false`. The Ingress must:
 
 - use `alb.ingress.kubernetes.io/security-groups` with Terraform's `alb_security_group_id` output;
 - set `alb.ingress.kubernetes.io/manage-backend-security-group-rules: "false"`;
 - use `alb.ingress.kubernetes.io/target-type: ip`, port 8000 and `/health/ready`;
 - use the two `public_subnet_ids`, the foundation's ACM certificate, and no WAF/Shield annotations.
 
-Terraform owns the ALB and worker security-group rules. The Ingress and controller create the **single physical ALB**. The controller will not create or modify security groups under this contract. Broader permissions retained from the upstream controller policy must be reviewed against the deployed actions; an IAM role bound to the controller service account limits who can exercise them.
+Terraform owns the ALB and worker security-group rules. The Ingress and controller create the **single physical ALB**. The controller will not create or modify security groups under this contract. Review the rendered policy and live reconciliation before deployment; the scoped draft has not been simulated or attached. See [preflight and permissions](../../docs/preflight.md).
+
+## Verified version file
+
+EKS minor, all three add-on versions, managed node AL2023 release, its SSM parameter version and AMI ID, and the relay AL2023 AMI are required Terraform inputs without defaults. The checked-in [example](version-inputs.tfvars.json.example) contains invalid placeholders; preflight fills the two node evidence fields in the verified output. Follow the [preflight procedure](../../docs/preflight.md) to choose and verify values, then retain `.local/verified-workload.tfvars.json` through teardown. From the repository root, after backend initialization and approval:
+
+```bash
+WORKLOAD_VARS="$PWD/.local/verified-workload.tfvars.json"
+terraform -chdir=terraform/workload plan -input=false -var-file="$WORKLOAD_VARS" -out=workload.tfplan
+terraform -chdir=terraform/workload show -no-color workload.tfplan
+terraform -chdir=terraform/workload apply workload.tfplan
+```
+
+The reviewed saved plan embeds these inputs. For teardown, use `plan -destroy -input=false -var-file="$WORKLOAD_VARS" -out=workload-destroy.tfplan`, review it with `show`, and apply that saved plan after Ansible cleanup.
 
 ## Lifecycle
 
