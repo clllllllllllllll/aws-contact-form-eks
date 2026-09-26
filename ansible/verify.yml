@@ -16,8 +16,8 @@
       ansible.builtin.assert:
         that:
           - demo_email is defined
-          - demo_email | length > 0
-          - demo_email | lower | regex_search("@example[.]com$")
+          - demo_email | default('') | length > 0
+          - (demo_email | default('') | lower | regex_search('^[^@]+@example[.]com$')) is not none
           - kubeconfig_path is file
         fail_msg: "Submit synthetic data and pass -e demo_email=... while the SSM tunnel is open."
 
