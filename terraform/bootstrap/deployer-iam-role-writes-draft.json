@@ -1,0 +1,110 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CreateOnlyNamedProjectRolesWithProjectTag",
+      "Effect": "Allow",
+      "Action": "iam:CreateRole",
+      "Resource": [
+        "arn:aws:iam::203888389134:role/contact-form-config-recorder",
+        "arn:aws:iam::203888389134:role/contact-form-eks-cluster",
+        "arn:aws:iam::203888389134:role/contact-form-eks-nodes",
+        "arn:aws:iam::203888389134:role/contact-form-cni",
+        "arn:aws:iam::203888389134:role/contact-form-controller",
+        "arn:aws:iam::203888389134:role/contact-form-app",
+        "arn:aws:iam::203888389134:role/contact-form-setup",
+        "arn:aws:iam::203888389134:role/contact-form-ssm-relay"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform"
+        }
+      }
+    },
+    {
+      "Sid": "UpdateAndDeleteOnlyNamedProjectRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:UpdateAssumeRolePolicy",
+        "iam:DeleteRole",
+        "iam:TagRole",
+        "iam:UntagRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::203888389134:role/contact-form-config-recorder",
+        "arn:aws:iam::203888389134:role/contact-form-eks-cluster",
+        "arn:aws:iam::203888389134:role/contact-form-eks-nodes",
+        "arn:aws:iam::203888389134:role/contact-form-cni",
+        "arn:aws:iam::203888389134:role/contact-form-controller",
+        "arn:aws:iam::203888389134:role/contact-form-app",
+        "arn:aws:iam::203888389134:role/contact-form-setup",
+        "arn:aws:iam::203888389134:role/contact-form-ssm-relay"
+      ]
+    },
+    {
+      "Sid": "ManageOnlyFourCheckedInInlineRolePolicies",
+      "Effect": "Allow",
+      "Action": [
+        "iam:PutRolePolicy",
+        "iam:DeleteRolePolicy"
+      ],
+      "Resource": [
+        "arn:aws:iam::203888389134:role/contact-form-config-recorder",
+        "arn:aws:iam::203888389134:role/contact-form-controller",
+        "arn:aws:iam::203888389134:role/contact-form-app",
+        "arn:aws:iam::203888389134:role/contact-form-setup"
+      ]
+    },
+    {
+      "Sid": "AttachOnlyClusterManagedPolicy",
+      "Effect": "Allow",
+      "Action": ["iam:AttachRolePolicy", "iam:DetachRolePolicy"],
+      "Resource": "arn:aws:iam::203888389134:role/contact-form-eks-cluster",
+      "Condition": {
+        "ArnEquals": { "iam:PolicyARN": "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy" }
+      }
+    },
+    {
+      "Sid": "AttachOnlyNodeManagedPolicies",
+      "Effect": "Allow",
+      "Action": ["iam:AttachRolePolicy", "iam:DetachRolePolicy"],
+      "Resource": "arn:aws:iam::203888389134:role/contact-form-eks-nodes",
+      "Condition": {
+        "ArnEquals": {
+          "iam:PolicyARN": [
+            "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
+            "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "AttachOnlyCniManagedPolicy",
+      "Effect": "Allow",
+      "Action": ["iam:AttachRolePolicy", "iam:DetachRolePolicy"],
+      "Resource": "arn:aws:iam::203888389134:role/contact-form-cni",
+      "Condition": {
+        "ArnEquals": { "iam:PolicyARN": "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy" }
+      }
+    },
+    {
+      "Sid": "AttachOnlyRelayManagedPolicy",
+      "Effect": "Allow",
+      "Action": ["iam:AttachRolePolicy", "iam:DetachRolePolicy"],
+      "Resource": "arn:aws:iam::203888389134:role/contact-form-ssm-relay",
+      "Condition": {
+        "ArnEquals": { "iam:PolicyARN": "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore" }
+      }
+    },
+    {
+      "Sid": "AttachOnlyConfigManagedPolicy",
+      "Effect": "Allow",
+      "Action": ["iam:AttachRolePolicy", "iam:DetachRolePolicy"],
+      "Resource": "arn:aws:iam::203888389134:role/contact-form-config-recorder",
+      "Condition": {
+        "ArnEquals": { "iam:PolicyARN": "arn:aws:iam::aws:policy/service-role/AWS_ConfigRole" }
+      }
+    }
+  ]
+}

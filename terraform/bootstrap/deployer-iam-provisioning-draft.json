@@ -1,0 +1,176 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadNamedProjectRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole",
+        "iam:ListRoleTags",
+        "iam:ListRolePolicies",
+        "iam:GetRolePolicy",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListInstanceProfilesForRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::203888389134:role/contact-form-config-recorder",
+        "arn:aws:iam::203888389134:role/contact-form-eks-cluster",
+        "arn:aws:iam::203888389134:role/contact-form-eks-nodes",
+        "arn:aws:iam::203888389134:role/contact-form-cni",
+        "arn:aws:iam::203888389134:role/contact-form-controller",
+        "arn:aws:iam::203888389134:role/contact-form-app",
+        "arn:aws:iam::203888389134:role/contact-form-setup",
+        "arn:aws:iam::203888389134:role/contact-form-ssm-relay"
+      ]
+    },
+    {
+      "Sid": "PassOnlyClusterRoleToEks",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::203888389134:role/contact-form-eks-cluster",
+      "Condition": {
+        "StringEquals": { "iam:PassedToService": "eks.amazonaws.com" }
+      }
+    },
+    {
+      "Sid": "PassOnlyNodeRoleToEks",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::203888389134:role/contact-form-eks-nodes",
+      "Condition": {
+        "StringEquals": { "iam:PassedToService": "eks.amazonaws.com" }
+      }
+    },
+    {
+      "Sid": "PassOnlyCniRoleToEksAddon",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::203888389134:role/contact-form-cni",
+      "Condition": {
+        "StringEquals": { "iam:PassedToService": "eks.amazonaws.com" }
+      }
+    },
+    {
+      "Sid": "PassOnlyRelayRoleToEc2",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::203888389134:role/contact-form-ssm-relay",
+      "Condition": {
+        "StringEquals": { "iam:PassedToService": "ec2.amazonaws.com" }
+      }
+    },
+    {
+      "Sid": "PassOnlyConfigRoleToConfig",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::203888389134:role/contact-form-config-recorder",
+      "Condition": {
+        "StringEquals": { "iam:PassedToService": "config.amazonaws.com" }
+      }
+    },
+    {
+      "Sid": "ReadClusterOidcProviders",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetOpenIDConnectProvider",
+        "iam:ListOpenIDConnectProviderTags"
+      ],
+      "Resource": "arn:aws:iam::203888389134:oidc-provider/oidc.eks.ap-southeast-1.amazonaws.com/id/*"
+    },
+    {
+      "Sid": "CreateTaggedClusterOidcProvider",
+      "Effect": "Allow",
+      "Action": "iam:CreateOpenIDConnectProvider",
+      "Resource": "arn:aws:iam::203888389134:oidc-provider/oidc.eks.ap-southeast-1.amazonaws.com/id/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform"
+        }
+      }
+    },
+    {
+      "Sid": "ManageTaggedClusterOidcProvider",
+      "Effect": "Allow",
+      "Action": [
+        "iam:DeleteOpenIDConnectProvider",
+        "iam:TagOpenIDConnectProvider",
+        "iam:UntagOpenIDConnectProvider",
+        "iam:AddClientIDToOpenIDConnectProvider",
+        "iam:RemoveClientIDFromOpenIDConnectProvider",
+        "iam:UpdateOpenIDConnectProviderThumbprint"
+      ],
+      "Resource": "arn:aws:iam::203888389134:oidc-provider/oidc.eks.ap-southeast-1.amazonaws.com/id/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/ManagedBy": "Terraform"
+        }
+      }
+    },
+    {
+      "Sid": "ListOidcProvidersForTerraformRefresh",
+      "Effect": "Allow",
+      "Action": "iam:ListOpenIDConnectProviders",
+      "Resource": "*"
+    },
+    {
+      "Sid": "ReadRelayInstanceProfile",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetInstanceProfile",
+        "iam:ListInstanceProfileTags"
+      ],
+      "Resource": "arn:aws:iam::203888389134:instance-profile/contact-form-ssm-relay"
+    },
+    {
+      "Sid": "ManageRelayInstanceProfile",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateInstanceProfile",
+        "iam:AddRoleToInstanceProfile",
+        "iam:RemoveRoleFromInstanceProfile",
+        "iam:DeleteInstanceProfile",
+        "iam:TagInstanceProfile",
+        "iam:UntagInstanceProfile"
+      ],
+      "Resource": "arn:aws:iam::203888389134:instance-profile/contact-form-ssm-relay"
+    },
+    {
+      "Sid": "CreateEksClusterLinkedRoleIfAbsent",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "arn:aws:iam::203888389134:role/aws-service-role/eks.amazonaws.com/AWSServiceRoleForAmazonEKS",
+      "Condition": {
+        "StringEquals": { "iam:AWSServiceName": ["eks.amazonaws.com", "eks"] }
+      }
+    },
+    {
+      "Sid": "CreateEksNodegroupLinkedRoleIfAbsent",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "arn:aws:iam::203888389134:role/aws-service-role/eks-nodegroup.amazonaws.com/AWSServiceRoleForAmazonEKSNodegroup",
+      "Condition": {
+        "StringEquals": { "iam:AWSServiceName": "eks-nodegroup.amazonaws.com" }
+      }
+    },
+    {
+      "Sid": "CreateRdsLinkedRoleIfAbsent",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "arn:aws:iam::203888389134:role/aws-service-role/rds.amazonaws.com/AWSServiceRoleForRDS",
+      "Condition": {
+        "StringEquals": { "iam:AWSServiceName": "rds.amazonaws.com" }
+      }
+    },
+    {
+      "Sid": "CreateSecurityHubLinkedRoleIfAbsent",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "arn:aws:iam::203888389134:role/aws-service-role/securityhub.amazonaws.com/AWSServiceRoleForSecurityHub",
+      "Condition": {
+        "StringEquals": { "iam:AWSServiceName": "securityhub.amazonaws.com" }
+      }
+    }
+  ]
+}

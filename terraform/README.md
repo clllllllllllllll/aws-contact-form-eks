@@ -14,6 +14,8 @@ The bootstrap plan reported `No changes` while the temporary bucket-setup policy
 
 The read-only runtime inventory policy draft at `bootstrap/runtime-inventory-policy.json` covers the AWS Describe/List calls used by `scripts/check_residual.py` in Singapore. It is not attached. The first inventory attempt failed on missing `ec2:DescribeVpcs`; this must be resolved before claiming that teardown is clean.
 
+The [deployer permission review](../docs/deployer-permissions.md) maps the current IAM resources to two unattached customer managed policy drafts: one for pass-role, OIDC, instance profiles, and first-use service-linked roles, and one for named role writes. The second permits arbitrary inline policy content on four project roles and therefore requires a trusted administrator, a time-limited attachment, and live simulation before apply or destroy. These IAM drafts do not supply other AWS provisioning actions.
+
 Review the actual Singapore cost and teardown plan separately before any foundation or workload apply.
 
 ## Backend initialization
