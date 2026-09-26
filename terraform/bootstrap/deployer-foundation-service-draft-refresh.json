@@ -85,7 +85,8 @@
       "Action": [
         "securityhub:DescribeHub",
         "securityhub:DescribeStandards",
-        "securityhub:GetEnabledStandards"
+        "securityhub:GetEnabledStandards",
+        "securityhub:GetFindings"
       ],
       "Resource": "arn:aws:securityhub:ap-southeast-1:203888389134:hub/default"
     },
