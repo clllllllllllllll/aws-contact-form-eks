@@ -71,6 +71,13 @@ resource "aws_s3_bucket_lifecycle_configuration" "evidence" {
     expiration { days = 30 }
     noncurrent_version_expiration { noncurrent_days = 30 }
   }
+  # Expired delete markers need a separate rule from the 30-day expiration.
+  rule {
+    id     = "remove-expired-service-log-markers"
+    status = "Enabled"
+    filter { prefix = "service-logs/" }
+    expiration { expired_object_delete_marker = true }
+  }
 }
 
 data "aws_iam_policy_document" "evidence_bucket" {
@@ -152,6 +159,21 @@ data "aws_iam_policy_document" "evidence_bucket" {
       test     = "StringEquals"
       variable = "s3:x-amz-acl"
       values   = ["bucket-owner-full-control"]
+    }
+  }
+  statement {
+    sid       = "AlbAccessLogsWrite"
+    effect    = "Allow"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.evidence.arn}/service-logs/alb/AWSLogs/${var.aws_account_id}/*"]
+    principals {
+      type        = "Service"
+      identifiers = ["logdelivery.elasticloadbalancing.amazonaws.com"]
+    }
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = ["arn:aws:elasticloadbalancing:${var.aws_region}:${var.aws_account_id}:loadbalancer/*"]
     }
   }
 }

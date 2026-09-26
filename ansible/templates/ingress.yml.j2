@@ -13,6 +13,7 @@ metadata:
     alb.ingress.kubernetes.io/ssl-redirect: "443"
     alb.ingress.kubernetes.io/certificate-arn: {{ tf.certificate_arn.value | to_json }}
     alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-Res-2021-06
+    alb.ingress.kubernetes.io/load-balancer-attributes: {{ ('access_logs.s3.enabled=true,access_logs.s3.bucket=' ~ tf.alb_access_log_bucket_name.value ~ ',access_logs.s3.prefix=service-logs/alb') | to_json }}
     alb.ingress.kubernetes.io/backend-protocol: HTTP
     alb.ingress.kubernetes.io/healthcheck-path: /health/ready
     alb.ingress.kubernetes.io/healthcheck-port: "8000"

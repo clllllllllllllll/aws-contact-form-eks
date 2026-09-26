@@ -16,6 +16,9 @@ output "vpc_id" {
 output "alb_security_group_id" {
   value = aws_security_group.alb.id
 }
+output "alb_access_log_bucket_name" {
+  value = data.terraform_remote_state.foundation.outputs.alb_access_log_bucket_name
+}
 output "rds_identifier" {
   value = aws_db_instance.main.identifier
 }

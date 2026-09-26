@@ -42,6 +42,22 @@ aws logs describe-log-groups --region ap-southeast-1 --log-group-name-prefix /aw
 
 Record the command time, account, Region, control ID, resource ID, status and finding `UpdatedAt`. Redact any customer data from saved evidence. Re-run the same query after remediation; a Terraform setting alone is not proof that Security Hub evaluated it.
 
+## ALB access log verification
+
+The Ingress requests ALB access logs in the retained evidence bucket under `service-logs/alb/`. This is a local configuration draft; delivery is unverified until the ALB runs after cost approval. The bucket uses SSE-S3, public-access blocks, and a TLS-only policy. The log-delivery service can write only to the account path under that prefix from load balancers in the intended account and Region. [AWS access-log setup](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/enable-access-logging.html).
+
+After sending only synthetic requests through the live HTTPS site, allow for delivery delay and list object metadata:
+
+```bash
+export AWS_PROFILE=contact-form-deployer
+ALB_LOG_BUCKET="$(terraform -chdir=terraform/foundation output -raw alb_access_log_bucket_name)"
+aws s3api list-objects-v2 --profile "$AWS_PROFILE" --region ap-southeast-1 --bucket "$ALB_LOG_BUCKET" --prefix service-logs/alb/AWSLogs/203888389134/elasticloadbalancing/ap-southeast-1/ --query 'Contents[].[Key,LastModified,Size]' --output table
+```
+
+Record the first recent `.log.gz` key and its `LastModified`, and match its `app.<load-balancer-id>` segment to the deployed ALB. `ELBAccessLogTestFile` confirms bucket permissions only; it is not an access log. Access logs can include client IPs and URLs, so do not retrieve or share log bodies or use real submissions for this check. [AWS access-log file format](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-access-logs.html).
+
+The `service-logs/` lifecycle rule expires current versions after 30 days and noncurrent versions 30 days after they become noncurrent. In a versioned bucket, a current-version expiration creates a delete marker, so old object versions can remain beyond 30 days total; a separate rule removes expired markers once no versions remain.
+
 ## Findings register
 
 | Control / resource | Observed status and time | Remediation | Retest status and time |
