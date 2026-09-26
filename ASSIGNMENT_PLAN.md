@@ -1,10 +1,10 @@
 # AWS Contact Form on EKS — Implementation Plan
 
-**Status:** The application is verified locally. The state bucket is applied and verified in AWS. Foundation Terraform is drafted and locally validated, but not applied. Workload Terraform and the database setup script are drafted and locally validated; no EKS, RDS, or application has been deployed.
+**Status (27 September 2026):** The application and container were verified locally, and the S3 state bucket was applied and verified in AWS. Foundation and workload Terraform, Ansible, read-only preflight, and cleanup remain local drafts; none has been applied to the workload account. This project has not provisioned EKS, RDS, NAT gateways, an ALB, or an AWS application deployment; account-wide inventory remains unverified. Current AWS login is expired and Docker is unavailable in WSL.
 
 **Objective:** Deploy a Flask contact form accepting name, email and message, with persistence in RDS PostgreSQL. Provision AWS infrastructure through Terraform and deploy the application through Ansible, entirely from the local workstation. Application infrastructure is provisioned from the workstation, not manually in the AWS Console. Initial IAM access policies were attached in the Console as an account prerequisite.
 
-**Official deadline:** Tuesday 29 September 2026, 18:00 Singapore time. **Personal target:** Sunday 27 September 2026, 23:59; aim to finish by 20:00 to leave time for fixes.
+**Official deadline:** Tuesday 29 September 2026, 18:00 Singapore time. **Personal target:** Sunday 27 September 2026, 23:59, with a 20:00 internal aim for fixes. The personal target is at risk while AWS login, Docker, permissions, pricing approval, deployment and rehearsal remain open.
 
 ## 1. Resume context
 
@@ -31,7 +31,7 @@ Deploy across two Availability Zones (AZs) in Singapore.
 | PostgreSQL | RDS Multi-AZ, with a primary database and a synchronized standby in the other AZ. Use encryption, backups and verified TLS connections. |
 | Credentials | Secrets Manager stores the credentials. Flask gets its own restricted database user and permission to read only its application secret. |
 | Container images | Private ECR repository; deploy immutable image digests for reproducibility. |
-| HTTPS | Buy an inexpensive domain, use Route 53 for DNS, and attach a free non-exportable ACM public certificate from Singapore to the ALB. Redirect HTTP to HTTPS. |
+| HTTPS | Use the purchased cheelong.xyz domain registered through Exabytes; verify registrar delegation to Route 53, then attach a free non-exportable ACM public certificate from Singapore to the ALB. Redirect HTTP to HTTPS. |
 | Security checks | Enable AWS Config and Security Hub's AWS Foundational Security Best Practices (FSBP) standard. Record findings, fixes and remaining exceptions. |
 
 **Evaluator clarification:** creating the Ingress triggers ALB creation. Terraform creates the network and IAM prerequisites. Ansible installs the AWS Load Balancer Controller and applies the Ingress. The controller owns the ALB, listeners and target groups; Terraform must not create a second ALB.
@@ -57,7 +57,7 @@ Availability rationale: separate managed node groups enforce one worker per AZ; 
 
 ## 3. Budget and resource lifecycle
 
-**Budget:** approximately US$140 AWS credits; initial usage target US$10 drawn from those credits. The agreed Multi-AZ design has not been priced. Estimate Singapore costs and verify credit eligibility/expiry before deployment.
+**Budget:** approximately US$140 AWS credits; initial usage target US$10 drawn from those credits. The Singapore cost document is an unapproved planning estimate. Verify current calculator pricing and credit eligibility/expiry before paid deployment. Keep paid runtime under ten hours total across provisioning, deletion, setup, rehearsal and demo.
 
 **Domain:** `cheelong.xyz` was registered through Exabytes. Registrar nameserver delegation to the planned Route 53 hosted zone is still pending; do not claim DNS or HTTPS works yet.
 
@@ -80,39 +80,34 @@ DNS, state, retained logs and evidence storage may still cost money after teardo
 
 ## 4. Implementation phases
 
-Plan approximately ten focused hours per day. Phase durations are estimates.
+The phases below are the implementation sequence, not dated evidence or a promise of available AWS runtime. Section 6 records actual status. Track all paid workload runtime against the single less-than-ten-hour total.
 
-**Day 1 milestone:** a submission through the ALB is stored in RDS.
+**Next live milestone:** a submission through the ALB is stored in RDS.
 
-**Day 2 milestone:** verified security, successful teardown/fresh rebuild, complete deliverables and laptop rehearsal.
+**Completion milestone:** security evidence, successful teardown/fresh rebuild, complete deliverables and laptop rehearsal.
 
 ### Phase 0 — Access and workstation checks
 
-*Day 1, hour 1*
-
-- [ ] Check the PC's repository, Git status and local repository instructions.
+- [x] Check the PC's repository, Git status and local repository instructions.
 - [ ] Verify non-root AWS access to the correct account. Set up authorized access on the laptop too; keep credentials out of Git.
 - [ ] Check Docker, AWS CLI, Session Manager plugin, Terraform, Ansible, kubectl, Helm, Python and required Ansible collections. Pin compatible versions.
 - [ ] Check Singapore service versions, permissions, quotas, costs and credits. Inspect any existing Config, Security Hub and CloudTrail setup.
-- [ ] Choose the domain and document how its registrar points DNS to Route 53.
+- [x] Choose and purchase `cheelong.xyz` through Exabytes.
+- [ ] Verify registrar nameserver delegation to Route 53 and document the live result.
 
 **Acceptance:** the tools work and the correct non-root AWS identity is confirmed. If AWS access is blocked, continue only with local development.
 
 ### Phase 1 — Application and local tests
 
-*Day 1, hours 2–3*
-
-- [ ] Build the form and confirmation page. Validate email and field lengths, add CSRF protection, use parameterized SQL and return safe error messages.
-- [ ] Add a liveness check for the running application and a readiness check that includes database connectivity. A database outage should not cause endless container restarts.
-- [ ] Build a non-root Gunicorn container with pinned dependencies and the RDS certificate bundle.
-- [ ] Use Boto3 to read the application secret through an IAM role assigned to its Kubernetes service account (IRSA). Store the shared signing secret securely and handle database reconnections.
-- [ ] Test valid and invalid submissions, saved rows, database errors and non-root startup against local PostgreSQL. Avoid logging passwords or submitted personal information.
+- [x] Build the form and confirmation page. Validate email and field lengths, add CSRF protection, use parameterized SQL and return safe error messages.
+- [x] Add a liveness check for the running application and a readiness check that includes database connectivity. A database outage should not cause endless container restarts.
+- [x] Build a non-root Gunicorn container with pinned dependencies and the RDS certificate bundle.
+- [ ] Verify the drafted Boto3 application-secret read through its service-account IAM role in live EKS. Keep the shared signing secret secure and test database reconnections there.
+- [x] Test valid and invalid submissions, saved rows, database errors and non-root startup against local PostgreSQL. Avoid logging passwords or submitted personal information.
 
 **Acceptance:** a local submission is saved and the focused tests pass.
 
 ### Phase 2 — Terraform infrastructure
-
-*Day 1, hours 4–6*
 
 - [x] Create and verify the persistent S3 state bucket.
 - [ ] Create DNS and evidence resources. Create the empty application secret as part of the disposable runtime environment.
@@ -129,8 +124,6 @@ Plan approximately ten focused hours per day. Phase durations are estimates.
 
 ### Phase 3 — Ansible deployment
 
-*Day 1, hours 7–8*
-
 - [ ] Automate building and pushing the image from the workstation. Read Terraform outputs automatically instead of copying IDs by hand.
 - [ ] Install the pinned AWS Load Balancer Controller with Helm. Manage the namespace, service accounts, Kubernetes RBAC and manifests through Ansible.
 - [ ] Run a database setup Job using the master secret. On a fresh build, generate application credentials and create the table and restricted database user. On reruns against the same database, reuse credentials and preserve existing rows.
@@ -144,8 +137,6 @@ Each resource must have one owner. Repeating Ansible against an existing environ
 
 ### Phase 4 — Functional and security verification
 
-*Day 1, hours 9–10; Day 2, hours 1–2*
-
 - [ ] Submit a recognizable test message and show its database row through a controlled query from inside the VPC.
 - [ ] Check that only the ALB accepts public inbound traffic. Verify private EKS access, RDS certificate verification, secret permissions, RBAC, logs and container settings.
 - [ ] Inspect node AZ labels and pod placement: one worker in each AZ and one Flask replica on each worker.
@@ -157,8 +148,6 @@ Each resource must have one owner. Repeating Ansible against an existing environ
 
 ### Phase 5 — Teardown and fresh rebuild
 
-*Day 2, hours 3–5*
-
 - [ ] Exercise the local teardown workflow prepared before the first destroy: stop new submissions, finish pending requests and remove the application DNS alias and Ingress.
 - [ ] Wait for the controller to delete its ALB resources before destroying EKS and the network.
 - [ ] Destroy runtime resources, including RDS and its application credentials. Preserve only the declared foundation resources and security evidence.
@@ -169,8 +158,6 @@ Each resource must have one owner. Repeating Ansible against an existing environ
 **Acceptance:** a complete destroy/rebuild starts with an empty database, accepts new submissions and requires no manual Console repairs.
 
 ### Phase 6 — Documentation and laptop rehearsal
-
-*Day 2, hours 6–10*
 
 - [ ] Finish the deliverables below, including exact setup, deployment, teardown and fresh-rebuild commands.
 - [ ] On the laptop, verify AWS identity, use the same code/tool versions and rehearse the complete teardown and fresh deployment.
@@ -186,7 +173,7 @@ Suggested folders: `app/`, `terraform/bootstrap/`, `terraform/foundation/`, `ter
 
 - [ ] Terraform code.
 - [ ] Ansible playbooks and roles.
-- [ ] Flask source, tests and container build.
+- [x] Flask source, tests and container build, verified locally.
 - [ ] Kubernetes manifests/templates and Helm configuration.
 - [ ] Architecture diagram showing both AZs, public/private traffic, secrets and workstation access.
 - [ ] README covering prerequisites, deployment, verification, troubleshooting, teardown and fresh rebuild; state explicitly that destroying RDS deletes demo submissions.
@@ -204,21 +191,23 @@ Execute the live demo from the local workstation:
 6. Submit the form and show the saved PostgreSQL row.
 7. Demonstrate the security controls and findings.
 
-Declare retained prerequisites: domain/DNS, state backend, required foundation encryption resources and security evidence. Build the runtime infrastructure from zero with a new empty database. Demo duration is not a planning blocker.
+Declare retained prerequisites: domain/DNS, state backend, required foundation encryption resources and security evidence. Build the runtime infrastructure from zero with a new empty database. Rehearse the demo steps and count provisioning, deletion, setup, rehearsal and demo against the less-than-ten-hour total paid runtime target.
 
 ## 6. Progress and next action
 
-**Completed (26 September 2026):** requirements review, architecture decisions, diagram, and local application implementation. The WSL profile `contact-form-deployer` previously returned a non-root IAM user in account `203888389134`, with Region `ap-southeast-1`; reconfirm the current session before provisioning. Dockerized PostgreSQL accepted a browser form submission and stored its row. Thirteen focused tests passed; the Gunicorn image runs as UID/GID 10001. The disposable local containers and network were removed with `make down`. Full AWS rebuilds are planned to create a fresh database; snapshot restoration is excluded.
+**Verified locally (26 September 2026):** requirements review, architecture decisions, diagram, and application implementation. Dockerized PostgreSQL accepted a browser form submission and stored its row. Thirteen focused tests passed; the Gunicorn image ran as UID/GID 10001. The disposable local containers and network were removed with `make down`. This earlier proof remains valid even though Docker is currently unavailable in WSL. Full AWS rebuilds are planned to create a fresh database; snapshot restoration is excluded.
 
 **AWS bootstrap completed (26 September 2026):** the scoped `ContactFormTerraformStateAccess` and temporary `ContactFormTerraformBucketSetup` inline policies were attached to the non-root deployer; the temporary policy was removed after bootstrap verification. Terraform created the S3 state bucket in account `203888389134`, Region `ap-southeast-1`. The first apply created the bucket but lacked `s3:GetBucketAcl`; after adding the provider's required read actions, the bucket was confirmed in AWS, its taint was safely removed from local state, and a second apply configured the five remaining settings. A fresh Terraform plan reported `No changes`. Direct AWS reads verified versioning, four public-access blocks, SSE-S3 `AES256`, enforced bucket ownership, and the deny-insecure-transport policy. The bootstrap state is local, Git-ignored, and restricted to owner-only mode `600`; no foundation/workload state objects have been written.
 
-**Local deployment draft (26 September 2026):** Ansible deploy/cleanup playbooks, Kubernetes manifest templates, and workstation helpers were added. Both playbooks pass syntax checks, the manifest templates render as YAML with synthetic outputs, and the pinned controller chart values were checked. None has been run against AWS; live IAM, tunnel, ALB, DNS and teardown behavior remains unverified.
+**Local infrastructure and deployment draft (27 September 2026):** Foundation stages and the workload S3 backend are explicit in the runbook; no remote backend initialization or state migration was run for either unapplied root. Workload Terraform has required version inputs, a read-only preflight helper and a scoped controller role policy. The controller policy and Terraform validated locally; live IAM simulation and reconciliation are pending. Ansible deploy/cleanup playbooks, Kubernetes templates and workstation helpers previously passed local syntax/render checks with synthetic outputs. None has run against AWS; tunnel, ALB, DNS, RDS, teardown and rebuild behavior remain unverified.
 
-**Verification and cost draft (26 September 2026):** A Singapore cost allowance, residual-resource inventory, RDS log exports, short-lived synthetic readback Job, and security evidence runbook were drafted locally. The first read-only AWS inventory failed because the deployer lacks `ec2:DescribeVpcs`; a scoped inventory policy is drafted but not attached. These still require review and live testing; no paid AWS resources were created by this work.
+**Verification, cost and cleanup draft (27 September 2026):** The Singapore cost allowance, residual-resource inventory, RDS log exports, synthetic readback Job and security runbook are local drafts. The inventory now covers tagged EBS volumes/snapshots, retained RDS automated backups and workload KMS keys, with `PendingDeletion` reported separately from actionable remnants. Worker/relay root-volume tags are specified in Terraform but unverified live; untagged/manual resources and other Regions remain outside the checker. Its expanded read policy and the preflight read policy are both unattached and untested live. The first inventory read was denied on `ec2:DescribeVpcs`. No paid workload resources were created by this work.
 
-**Pending:** check ongoing backend access after removing the temporary bucket-setup policy; preserve a secure backup of the local bootstrap state; verify the SSM plugin, Singapore quotas and full-stack cost estimate, credit eligibility, domain nameserver delegation and certificate validation, foundation apply, workload apply and live Ansible validation, AWS deployment, security findings, teardown/rebuild, and laptop rehearsal. No EKS, RDS, NAT, ALB, or application AWS infrastructure has been provisioned.
+**Current access and tooling (27 September 2026):** The `contact-form-deployer` profile previously returned a non-root IAM user in account `203888389134`, Region `ap-southeast-1`. Fresh read-only STS and quota attempts failed because the AWS login expired; the applied Standard EC2 quota and available headroom are unknown. Terraform 1.16.4, AWS CLI 2.37.0, kubectl 1.36.2, Helm 4.3.0, Ansible 2.21.4, Python 3.12.3 and Session Manager plugin 1.2.835.0 are installed. Docker is currently unavailable in the WSL distribution. The domain is purchased, but nameserver delegation and ACM validation are pending.
 
-**Next action:** wait for S3 versioning to propagate before the first backend state write; verify backend access through the ongoing state-access policy. Review the drafted foundation tier, price it, and obtain separate cost approval before apply. Do not apply paid foundation or workload resources without explicit cost confirmation.
+**Unresolved predeployment gates:** Restore AWS login and Docker; recheck ongoing backend access after the temporary setup policy was removed and securely back up local bootstrap state. Choose actual supported EKS/add-on/node and relay AMI pins and run read-only preflight. Verify applied Singapore quota, update headroom, service availability, account security-service ownership, credits, and an updated cost estimate. Scoped Terraform provisioning IAM remains **unresolved**: no provisioning policy has been attached, simulated, or approved; the read-only policy drafts do not grant apply access. Provisioning role-policy management needs separate trusted-administrator review. Foundation/workload apply, live Ansible validation, FSBP evidence, teardown/rebuild and laptop rehearsal are pending.
+
+**Next action:** restore local access, then verify the non-root account and Region, backend state and permissions, quota and version pins. Review provisioning IAM, existing security services, the full less-than-ten-hour paid schedule, credit eligibility and a current Singapore cost estimate before any paid apply. Finish registrar delegation and certificate validation at the appropriate foundation stage. Do not treat local validation as live deployment evidence.
 
 ## References
 
