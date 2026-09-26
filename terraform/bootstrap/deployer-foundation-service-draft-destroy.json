@@ -1,0 +1,92 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DeleteOnlyAcmValidationCnames",
+      "Effect": "Allow",
+      "Action": "route53:ChangeResourceRecordSets",
+      "Resource": "arn:aws:route53:::hostedzone/*",
+      "Condition": {
+        "ForAllValues:StringLike": {
+          "route53:ChangeResourceRecordSetsNormalizedRecordNames": "_*.cheelong.xyz"
+        },
+        "ForAllValues:StringEquals": {
+          "route53:ChangeResourceRecordSetsRecordTypes": "CNAME",
+          "route53:ChangeResourceRecordSetsActions": "DELETE"
+        },
+        "Null": {
+          "route53:ChangeResourceRecordSetsNormalizedRecordNames": "false",
+          "route53:ChangeResourceRecordSetsRecordTypes": "false",
+          "route53:ChangeResourceRecordSetsActions": "false"
+        }
+      }
+    },
+    {
+      "Sid": "DeleteTaggedProjectCertificate",
+      "Effect": "Allow",
+      "Action": "acm:DeleteCertificate",
+      "Resource": "arn:aws:acm:ap-southeast-1:203888389134:certificate/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks"
+        }
+      }
+    },
+    {
+      "Sid": "StopAndDeleteNamedRecorder",
+      "Effect": "Allow",
+      "Action": [
+        "config:StopConfigurationRecorder",
+        "config:DeleteConfigurationRecorder"
+      ],
+      "Resource": "arn:aws:config:ap-southeast-1:203888389134:configuration-recorder/contact-form-recorder/*"
+    },
+    {
+      "Sid": "DeleteRegionalDeliveryChannel",
+      "Effect": "Allow",
+      "Action": "config:DeleteDeliveryChannel",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-southeast-1"
+        }
+      }
+    },
+    {
+      "Sid": "DisableRegionalStandardAndHub",
+      "Effect": "Allow",
+      "Action": [
+        "securityhub:BatchDisableStandards",
+        "securityhub:DisableSecurityHub"
+      ],
+      "Resource": "arn:aws:securityhub:ap-southeast-1:203888389134:hub/default"
+    },
+    {
+      "Sid": "StopAndDeleteNamedTrail",
+      "Effect": "Allow",
+      "Action": [
+        "cloudtrail:StopLogging",
+        "cloudtrail:DeleteTrail"
+      ],
+      "Resource": "arn:aws:cloudtrail:ap-southeast-1:203888389134:trail/contact-form-management"
+    },
+    {
+      "Sid": "RemoveEvidenceBucketPolicy",
+      "Effect": "Allow",
+      "Action": "s3:DeleteBucketPolicy",
+      "Resource": "arn:aws:s3:::aws-contact-form-evidence-203888389134-ap-southeast-1"
+    },
+    {
+      "Sid": "RemoveEvidenceBucketSettings",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutBucketPublicAccessBlock",
+        "s3:PutBucketOwnershipControls",
+        "s3:PutEncryptionConfiguration",
+        "s3:PutLifecycleConfiguration",
+        "s3:PutBucketVersioning"
+      ],
+      "Resource": "arn:aws:s3:::aws-contact-form-evidence-203888389134-ap-southeast-1"
+    }
+  ]
+}

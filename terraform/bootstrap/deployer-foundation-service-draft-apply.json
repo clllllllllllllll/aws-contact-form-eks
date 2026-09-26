@@ -1,0 +1,228 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CreatePublicHostedZone",
+      "Effect": "Allow",
+      "Action": "route53:CreateHostedZone",
+      "Resource": "*",
+      "Condition": {
+        "Null": {
+          "route53:VPCs": "true"
+        }
+      }
+    },
+    {
+      "Sid": "TagCreatedHostedZone",
+      "Effect": "Allow",
+      "Action": "route53:ChangeTagsForResource",
+      "Resource": "arn:aws:route53:::hostedzone/*"
+    },
+    {
+      "Sid": "WriteOnlyAcmValidationCnames",
+      "Effect": "Allow",
+      "Action": "route53:ChangeResourceRecordSets",
+      "Resource": "arn:aws:route53:::hostedzone/*",
+      "Condition": {
+        "ForAllValues:StringLike": {
+          "route53:ChangeResourceRecordSetsNormalizedRecordNames": "_*.cheelong.xyz"
+        },
+        "ForAllValues:StringEquals": {
+          "route53:ChangeResourceRecordSetsRecordTypes": "CNAME",
+          "route53:ChangeResourceRecordSetsActions": [
+            "CREATE",
+            "UPSERT"
+          ]
+        },
+        "Null": {
+          "route53:ChangeResourceRecordSetsNormalizedRecordNames": "false",
+          "route53:ChangeResourceRecordSetsRecordTypes": "false",
+          "route53:ChangeResourceRecordSetsActions": "false"
+        }
+      }
+    },
+    {
+      "Sid": "RequestOnlyTaggedDnsCertificate",
+      "Effect": "Allow",
+      "Action": "acm:RequestCertificate",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-southeast-1",
+          "acm:ValidationMethod": "DNS",
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "foundation"
+        },
+        "ForAllValues:StringEquals": {
+          "acm:DomainNames": "cheelong.xyz",
+          "aws:TagKeys": [
+            "Project",
+            "ManagedBy",
+            "Lifecycle"
+          ]
+        },
+        "Null": {
+          "acm:DomainNames": "false",
+          "aws:TagKeys": "false"
+        }
+      }
+    },
+    {
+      "Sid": "TagCertificateAtRequest",
+      "Effect": "Allow",
+      "Action": "acm:AddTagsToCertificate",
+      "Resource": "arn:aws:acm:ap-southeast-1:203888389134:certificate/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "foundation"
+        },
+        "ForAllValues:StringEquals": {
+          "aws:TagKeys": [
+            "Project",
+            "ManagedBy",
+            "Lifecycle"
+          ]
+        },
+        "Null": {
+          "aws:TagKeys": "false"
+        }
+      }
+    },
+    {
+      "Sid": "RetagProjectCertificate",
+      "Effect": "Allow",
+      "Action": [
+        "acm:AddTagsToCertificate",
+        "acm:RemoveTagsFromCertificate"
+      ],
+      "Resource": "arn:aws:acm:ap-southeast-1:203888389134:certificate/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks"
+        }
+      }
+    },
+    {
+      "Sid": "CreateSingaporeEvidenceBucket",
+      "Effect": "Allow",
+      "Action": "s3:CreateBucket",
+      "Resource": "arn:aws:s3:::aws-contact-form-evidence-203888389134-ap-southeast-1",
+      "Condition": {
+        "StringEquals": {
+          "s3:locationconstraint": "ap-southeast-1"
+        }
+      }
+    },
+    {
+      "Sid": "TagEvidenceBucketAtCreate",
+      "Effect": "Allow",
+      "Action": "s3:TagResource",
+      "Resource": "arn:aws:s3:::aws-contact-form-evidence-203888389134-ap-southeast-1",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "foundation"
+        },
+        "ForAllValues:StringEquals": {
+          "aws:TagKeys": [
+            "Project",
+            "ManagedBy",
+            "Lifecycle"
+          ]
+        },
+        "Null": {
+          "aws:TagKeys": "false"
+        }
+      }
+    },
+    {
+      "Sid": "ConfigureEvidenceBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutBucketPublicAccessBlock",
+        "s3:PutBucketOwnershipControls",
+        "s3:PutEncryptionConfiguration",
+        "s3:PutBucketVersioning",
+        "s3:PutLifecycleConfiguration",
+        "s3:PutBucketPolicy",
+        "s3:PutBucketTagging"
+      ],
+      "Resource": "arn:aws:s3:::aws-contact-form-evidence-203888389134-ap-southeast-1"
+    },
+    {
+      "Sid": "ConfigureNamedRecorder",
+      "Effect": "Allow",
+      "Action": [
+        "config:PutConfigurationRecorder",
+        "config:StartConfigurationRecorder",
+        "config:TagResource",
+        "config:UntagResource"
+      ],
+      "Resource": "arn:aws:config:ap-southeast-1:203888389134:configuration-recorder/contact-form-recorder/*"
+    },
+    {
+      "Sid": "ConfigureRegionalDeliveryChannel",
+      "Effect": "Allow",
+      "Action": "config:PutDeliveryChannel",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-southeast-1"
+        }
+      }
+    },
+    {
+      "Sid": "EnableRegionalSecurityHubAndStandard",
+      "Effect": "Allow",
+      "Action": [
+        "securityhub:EnableSecurityHub",
+        "securityhub:UpdateSecurityHubConfiguration",
+        "securityhub:BatchEnableStandards"
+      ],
+      "Resource": "arn:aws:securityhub:ap-southeast-1:203888389134:hub/default"
+    },
+    {
+      "Sid": "ConfigureNamedManagementTrail",
+      "Effect": "Allow",
+      "Action": [
+        "cloudtrail:CreateTrail",
+        "cloudtrail:UpdateTrail",
+        "cloudtrail:PutEventSelectors",
+        "cloudtrail:StartLogging",
+        "cloudtrail:AddTags",
+        "cloudtrail:RemoveTags"
+      ],
+      "Resource": "arn:aws:cloudtrail:ap-southeast-1:203888389134:trail/contact-form-management"
+    },
+    {
+      "Sid": "CreateAndSetRetentionOnNamedLogGroups",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:PutRetentionPolicy"
+      ],
+      "Resource": [
+        "arn:aws:logs:ap-southeast-1:203888389134:log-group:/aws/eks/contact-form-eks/cluster:*",
+        "arn:aws:logs:ap-southeast-1:203888389134:log-group:/aws/rds/instance/contact-form-postgres/postgresql:*",
+        "arn:aws:logs:ap-southeast-1:203888389134:log-group:/aws/rds/instance/contact-form-postgres/upgrade:*"
+      ]
+    },
+    {
+      "Sid": "TagNamedLogGroups",
+      "Effect": "Allow",
+      "Action": [
+        "logs:TagResource",
+        "logs:UntagResource"
+      ],
+      "Resource": [
+        "arn:aws:logs:ap-southeast-1:203888389134:log-group:/aws/eks/contact-form-eks/cluster",
+        "arn:aws:logs:ap-southeast-1:203888389134:log-group:/aws/rds/instance/contact-form-postgres/postgresql",
+        "arn:aws:logs:ap-southeast-1:203888389134:log-group:/aws/rds/instance/contact-form-postgres/upgrade"
+      ]
+    }
+  ]
+}
