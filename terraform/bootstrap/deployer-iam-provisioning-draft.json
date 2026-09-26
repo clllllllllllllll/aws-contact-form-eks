@@ -75,18 +75,40 @@
         "iam:GetOpenIDConnectProvider",
         "iam:ListOpenIDConnectProviderTags"
       ],
-      "Resource": "arn:aws:iam::203888389134:oidc-provider/oidc.eks.ap-southeast-1.amazonaws.com/id/*"
+      "Resource": "arn:aws:iam::203888389134:oidc-provider/oidc.eks.ap-southeast-1.amazonaws.com/id/BOOTSTRAP-PLACEHOLDER"
     },
     {
       "Sid": "CreateTaggedClusterOidcProvider",
       "Effect": "Allow",
       "Action": "iam:CreateOpenIDConnectProvider",
-      "Resource": "arn:aws:iam::203888389134:oidc-provider/oidc.eks.ap-southeast-1.amazonaws.com/id/*",
+      "Resource": "arn:aws:iam::203888389134:oidc-provider/oidc.eks.ap-southeast-1.amazonaws.com/id/BOOTSTRAP-PLACEHOLDER",
       "Condition": {
         "StringEquals": {
           "aws:RequestTag/Project": "aws-contact-form-eks",
-          "aws:RequestTag/ManagedBy": "Terraform"
-        }
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload"
+        },
+        "ForAllValues:StringEquals": {
+          "aws:TagKeys": ["Project", "ManagedBy", "Lifecycle"]
+        },
+        "Null": { "aws:TagKeys": "false" }
+      }
+    },
+    {
+      "Sid": "TagNewClusterOidcProviderAtCreate",
+      "Effect": "Allow",
+      "Action": "iam:TagOpenIDConnectProvider",
+      "Resource": "arn:aws:iam::203888389134:oidc-provider/oidc.eks.ap-southeast-1.amazonaws.com/id/BOOTSTRAP-PLACEHOLDER",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload"
+        },
+        "ForAllValues:StringEquals": {
+          "aws:TagKeys": ["Project", "ManagedBy", "Lifecycle"]
+        },
+        "Null": { "aws:TagKeys": "false" }
       }
     },
     {
@@ -100,7 +122,7 @@
         "iam:RemoveClientIDFromOpenIDConnectProvider",
         "iam:UpdateOpenIDConnectProviderThumbprint"
       ],
-      "Resource": "arn:aws:iam::203888389134:oidc-provider/oidc.eks.ap-southeast-1.amazonaws.com/id/*",
+      "Resource": "arn:aws:iam::203888389134:oidc-provider/oidc.eks.ap-southeast-1.amazonaws.com/id/BOOTSTRAP-PLACEHOLDER",
       "Condition": {
         "StringEquals": {
           "aws:ResourceTag/Project": "aws-contact-form-eks",
