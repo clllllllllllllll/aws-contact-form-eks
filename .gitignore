@@ -19,6 +19,7 @@ __pycache__/
 *.tfplan
 *.tfvars
 !*.tfvars.example
+!terraform/foundation/stages/*.tfvars
 *.tfbackend
 
 # Editor and OS

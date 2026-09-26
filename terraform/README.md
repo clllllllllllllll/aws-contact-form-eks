@@ -8,10 +8,49 @@ The three roots have different lifecycles:
 | `foundation/` | Drafted and locally validated; not applied | Resources retained between workload teardown and redeployment |
 | `workload/` | Drafted and locally validated; not applied | Disposable VPC, EKS, RDS, IAM, ECR, and application secret metadata |
 
-Bootstrap's state is local at `bootstrap/terraform.tfstate` and excluded from Git. Preserve it securely. Foundation has a local S3 backend file and a drafted, locally validated resource configuration. It has not been applied or written a state object. Workload has a backend example and a locally validated resource draft. The two roots use different S3 keys.
+Bootstrap's state is local at `bootstrap/terraform.tfstate` and excluded from Git. Preserve it securely. Foundation and workload both declare S3 backends, with distinct `foundation/terraform.tfstate` and `workload/terraform.tfstate` keys. Neither root has been applied; the last verified checkpoint had no state object for either root. Recheck state before the first live init on each workstation.
 
 The bootstrap plan reported `No changes` while the temporary bucket-setup policy was attached. That policy was then removed. To refresh or plan `terraform/bootstrap/` again, temporarily restore its setup/read permissions; the ongoing state-access policy alone only covers the foundation and workload S3 state objects and locks. Do not reapply or destroy bootstrap without reviewing the plan. Test the separate backend access using the ongoing state-access policy alone. Reattach the setup policy temporarily for deliberate bootstrap maintenance. Full state-bucket teardown also requires removing prevent_destroy and granting explicit deletion permissions after foundation and workload are gone.
 
 The read-only runtime inventory policy draft at `bootstrap/runtime-inventory-policy.json` covers the AWS Describe/List calls used by `scripts/check_residual.py` in Singapore. It is not attached. The first inventory attempt failed on missing `ec2:DescribeVpcs`; this must be resolved before claiming that teardown is clean.
 
 Review the actual Singapore cost and teardown plan separately before any foundation or workload apply.
+
+## Backend initialization
+
+Before the first live `terraform init`, verify the non-root AWS identity and check both local state files and the exact S3 state keys. The workload's existing `.terraform/` directory came from a syntax-only `init -backend=false`; provider cache is not resource state. Run these checks with working AWS credentials; an access error does not mean an S3 key is empty:
+
+```bash
+find terraform/foundation terraform/workload -maxdepth 1 -name 'terraform.tfstate*' -print
+aws sts get-caller-identity --profile contact-form-deployer
+aws s3api list-object-versions --profile contact-form-deployer --region ap-southeast-1 --bucket aws-contact-form-eks-tfstate-203888389134-ap-southeast-1 --prefix foundation/terraform.tfstate
+aws s3api list-object-versions --profile contact-form-deployer --region ap-southeast-1 --bucket aws-contact-form-eks-tfstate-203888389134-ap-southeast-1 --prefix workload/terraform.tfstate
+```
+
+Inspect the exact state keys, including current versions and delete markers; the prefix also matches lockfiles. The ongoing state-access policy includes `s3:ListBucketVersions`. If local state is absent and the remote check is clear, use ordinary `terraform -chdir=terraform/foundation init` or `terraform -chdir=terraform/workload init`. An existing current S3 state must be reused and checked with `terraform state list` before planning. If local state exists and the corresponding S3 key has no version history, keep a private backup and use `terraform init -migrate-state` for that root, then verify the migrated resources. If both copies exist, the exact key has a delete marker or older version but no current state, or an S3 check fails, stop and reconcile before init. Do not use `-reconfigure` or `-force-copy` to bypass a state conflict. No migration or live backend init has been run for this checkpoint.
+
+## Foundation stages
+
+Each checked-in stage file sets all three feature flags. The flags have no defaults; `plan -input=false` fails if a stage file is omitted instead of prompting for values. Select the next stage only after reviewing the account-wide service inventory, Terraform ownership, DNS delegation, and cost as applicable:
+
+| Stage file under `foundation/stages/` | Use when |
+| --- | --- |
+| `01-base.tfvars` | Initial DNS zone, evidence bucket, and retained EKS log group |
+| `02-security-existing-trail.tfvars` | Config and Security Hub can be managed here; a suitable management-event trail already exists |
+| `02-security-project-trail.tfvars` | Config and Security Hub can be managed here; a new project trail is needed |
+| `03-ready-existing-trail.tfvars` | Registrar delegation is verified; continue the existing-trail branch and request the ACM certificate |
+| `03-ready-project-trail.tfvars` | Registrar delegation is verified; continue the project-trail branch and request the ACM certificate |
+
+Use the same branch of stage 02 and 03. If Config or Security Hub is already configured, resolve ownership or import before selecting a security stage. Never return to an earlier stage file after applying a later one: the earlier flags would propose deleting enabled resources. Use the current stage file for every later foundation plan. From the repository root, after the backend checks and cost approval:
+
+```bash
+export AWS_PROFILE=contact-form-deployer
+umask 077
+terraform -chdir=terraform/foundation init
+FOUNDATION_STAGE=stages/01-base.tfvars
+terraform -chdir=terraform/foundation plan -input=false -var-file="$FOUNDATION_STAGE" -out=foundation.tfplan
+terraform -chdir=terraform/foundation show -no-color foundation.tfplan
+terraform -chdir=terraform/foundation apply foundation.tfplan
+```
+
+For each later stage, set `FOUNDATION_STAGE` to its table entry and repeat the plan, show, and apply commands. Apply only a newly generated plan after reviewing its resource changes; stop if planning fails. The ignored plan file is local and may contain sensitive deployment details. Workload planning follows a completed certificate stage and its own backend check.

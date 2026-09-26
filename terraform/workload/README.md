@@ -2,6 +2,8 @@
 
 This Terraform root is a locally validated draft. It has **not** been applied in AWS. Apply the persistent foundation first, including the validated certificate for `cheelong.xyz`, and review Singapore costs and permissions before any workload plan or apply.
 
+`backend.tf` declares the encrypted S3 state key `workload/terraform.tfstate` with S3 lockfiles and an account restriction. Before a live `terraform init`, inspect local and S3 state as described in [Terraform roots](../README.md#backend-initialization). The earlier `init -backend=false` was for syntax checks only; do not treat its provider cache as initialized remote state.
+
 The intended runtime contains a VPC across two AZs, two public ALB/NAT subnets, two private worker subnets, two isolated RDS subnets, one EKS managed worker per AZ, a private-only EKS API, a private SSM relay, Multi-AZ PostgreSQL, ECR, and an empty application secret. RDS manages the master secret. A later Kubernetes setup Job initializes the database and writes the restricted application secret. No database password is a Terraform input or output.
 
 ## Controller and Ingress contract
@@ -21,12 +23,11 @@ The foundation owns `/aws/eks/contact-form-eks/cluster` so audit events survive 
 
 Before `terraform destroy`, Ansible must remove the application DNS alias and Ingress, then wait until the controller has deleted the ALB and target groups. Destroying this root deliberately deletes RDS and all submissions, the worker instances, NAT gateways, ECR images, and runtime secrets. Keep the foundation and state bucket. Check AWS for orphaned ALBs, NAT gateways, EIPs and RDS instances after destroy.
 
-For local syntax checks only:
+For local checks with the provider already installed (no AWS access or state migration):
 
 ```bash
-AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/workload init -backend=false -reconfigure
 terraform -chdir=terraform/workload fmt -check
-AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/workload validate
+terraform -chdir=terraform/workload validate -no-color
 ```
 
 A successful validate checks Terraform syntax and provider schema. It does not verify IAM permissions, pricing, quotas, Singapore engine versions, or live deployment.

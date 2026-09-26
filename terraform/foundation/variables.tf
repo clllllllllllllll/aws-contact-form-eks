@@ -26,15 +26,12 @@ variable "domain_name" {
 variable "enable_certificate" {
   description = "Set true only after the registrar uses the hosted zone's Route 53 nameservers."
   type        = bool
-  default     = false
 }
 variable "enable_security_services" {
   description = "Enable account/Region-wide Config and Security Hub after inventory and cost review."
   type        = bool
-  default     = false
 }
 variable "enable_cloudtrail" {
   description = "Create a project trail only if the account lacks suitable management-event coverage."
   type        = bool
-  default     = false
 }

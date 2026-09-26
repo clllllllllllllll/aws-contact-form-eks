@@ -103,20 +103,24 @@ This is the target order for the local-workstation deployment. Bootstrap is appl
 6. **Run Ansible locally.** The drafted `ansible/deploy.yml` builds and pushes an immutable image to private ECR, installs the pinned AWS Load Balancer Controller, and applies the namespace, service accounts, RBAC, database setup Job, Deployment, ClusterIP Service, and HTTPS Ingress. The database Job creates the restricted app user and table on a fresh database; a rerun must reuse credentials and preserve rows. Ansible then waits for healthy ALB targets and creates the Route 53 alias.
 7. **Verify the site and security controls.** Submit synthetic data through HTTPS, query its row from a controlled client inside the VPC, and record the evidence listed below. Run Ansible again and check that it makes no unwanted changes.
 
-The Terraform invocation pattern is below. Bootstrap has been run and verified for this account; foundation is a draft and the remaining tiers need review, cost approval, and live testing:
+Bootstrap has been run and verified for this account. Check local and S3 state before live backend initialization, then apply the foundation in named stages. The three feature flags are required; each stage file supplies them together, and `-input=false` prevents an omitted file from becoming interactive prompts. The [Terraform runbook](terraform/README.md#backend-initialization) gives the state checks, stage choices, and ownership gates. These commands are for future use after cost approval and valid AWS login:
 
 ```bash
-AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/bootstrap init
-AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/bootstrap plan
-AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/bootstrap apply
+export AWS_PROFILE=contact-form-deployer
+umask 077
+terraform -chdir=terraform/foundation init
+FOUNDATION_STAGE=stages/01-base.tfvars
+terraform -chdir=terraform/foundation plan -input=false -var-file="$FOUNDATION_STAGE" -out=foundation.tfplan
+terraform -chdir=terraform/foundation show -no-color foundation.tfplan
+terraform -chdir=terraform/foundation apply foundation.tfplan
+```
 
-AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/foundation init
-AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/foundation plan
-AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/foundation apply
+After inventory and ownership review, choose either `stages/02-security-existing-trail.tfvars` or `stages/02-security-project-trail.tfvars` and repeat the foundation plan/show/apply commands. Once registrar delegation is verified, use the matching `stages/03-ready-*.tfvars` file to request and validate the certificate. Keep the latest selected stage for later foundation plans. After stage 03 completes and the workload state check is clear, initialize and plan the disposable root:
 
-AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/workload init
-AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/workload plan
-AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/workload apply
+```bash
+terraform -chdir=terraform/workload init
+terraform -chdir=terraform/workload plan -input=false
+terraform -chdir=terraform/workload apply
 ```
 
 After the workload is applied and the tunnel works, the draft deployment command is:
