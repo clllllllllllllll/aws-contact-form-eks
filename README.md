@@ -2,7 +2,7 @@
 
 A Flask contact form for name, email, and message. PostgreSQL on Amazon RDS stores submissions; Amazon EKS runs the app. Terraform owns the AWS infrastructure, and Ansible owns the Kubernetes deployment.
 
-**Status (26 September 2026):** The Flask form, PostgreSQL schema, local tests, and Docker image are verified; thirteen tests passed and a local browser submission reached PostgreSQL. The Terraform state bucket is provisioned and verified in AWS. Foundation Terraform is drafted and passes local validation, but has not been applied. Workload Terraform, Ansible deployment, EKS, RDS, and the ALB are not deployed. The remaining AWS runbook is a target sequence until those tiers are tested.
+**Status (26 September 2026):** The Flask form, PostgreSQL schema, local tests, and Docker image are verified; thirteen tests passed and a local browser submission reached PostgreSQL. The Terraform state bucket is provisioned and verified in AWS. Foundation Terraform is drafted and passes local validation, but has not been applied. Workload Terraform and the database setup script are also drafted and locally validated, but Ansible, EKS, RDS, and the ALB are not deployed. The remaining AWS runbook is a target sequence until those tiers are tested.
 
 ## Architecture
 
@@ -30,12 +30,12 @@ Present now:
 | `docs/architecture.png` | High-level architecture diagram |
 | `docs/security.md` | Template for actual controls, findings, and exceptions |
 | `app/` | Flask form, SQL schema, Docker image, local Makefile, and integration tests; verified locally |
-| `terraform/bootstrap/`, `terraform/foundation/`, `terraform/workload/` | Applied state-bucket bootstrap; foundation is a locally validated draft, workload is pending review |
+| `terraform/bootstrap/`, `terraform/foundation/`, `terraform/workload/` | Applied state-bucket bootstrap; foundation and workload are locally validated drafts; neither is applied |
 | `ansible/` | Playbook and role placeholders; playbooks stop until implemented |
 | `scripts/` | Placeholder for local deployment helpers |
 | `.gitignore` | Excludes local secrets, state, plans, and generated files |
 
-Foundation Terraform is locally validated but has not been applied; workload and Ansible remain unfinished. Only the Terraform state bucket and its configuration have been created in AWS.
+Foundation Terraform is locally validated but has not been applied; workload is a locally validated draft; Ansible remains unfinished. Only the Terraform state bucket and its configuration have been created in AWS.
 
 ## Prerequisites and cost gate
 
@@ -83,7 +83,7 @@ Bootstrap state stays local at `terraform/bootstrap/terraform.tfstate` and is ex
 
 ## Deployment runbook
 
-This is the target order for the local-workstation deployment. Bootstrap is applied and verified; foundation Terraform is a locally validated draft; workload and Ansible are not ready for AWS deployment. Complete and test each remaining stage before using its apply or deployment commands. Review the actual plan and cost before each apply.
+This is the target order for the local-workstation deployment. Bootstrap is applied and verified; foundation Terraform is a locally validated draft; workload is a locally validated draft and Ansible is not yet implemented. Complete and test each remaining stage before using its apply or deployment commands. Review the actual plan and cost before each apply.
 
 1. **Build and test the app locally.** Start a local PostgreSQL instance, run the Flask tests, submit a test form, and query the saved row. Build the container and confirm it runs as a non-root user. Local development may use a separate local database credential; production credentials come from Secrets Manager.
 2. **Bootstrap remote Terraform state (done for this account).** The encrypted, versioned S3 bucket is ready for foundation/workload state and S3 lockfiles. Preserve the local bootstrap state securely. Do not put secrets in Terraform inputs or outputs.
