@@ -171,16 +171,153 @@
             annotations:
               eks.amazonaws.com/role-arn: "{{ tf.database_setup_role_arn.value }}"
 
-    - name: Initialize or verify the restricted database user and schema
+    - name: Render the image-specific database setup Job
+      ansible.builtin.set_fact:
+        database_job_definition: "{{ lookup('template', playbook_dir ~ '/templates/database-job.yml.j2') | from_yaml }}"
+      no_log: true
+
+    - name: Inspect the existing database setup Job
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: batch/v1
+        kind: Job
+        namespace: contact-form
+        name: "{{ database_job_definition.metadata.name }}"
+      register: database_job_initial
+      no_log: true
+
+    - name: Wait for an existing running database setup Job
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: batch/v1
+        kind: Job
+        namespace: contact-form
+        name: "{{ database_job_definition.metadata.name }}"
+      register: database_job_existing_wait
+      until: >-
+        ((database_job_existing_wait.resources | default([]) | first | default({}))
+        | database_job_state) in ['absent', 'complete', 'failed']
+      retries: 60
+      delay: 10
+      when: >-
+        ((database_job_initial.resources | first | default({}))
+        | database_job_state) == 'running'
+      ignore_errors: true
+      no_log: true
+
+    - name: Keep the latest database setup Job status
+      ansible.builtin.set_fact:
+        database_job_current: >-
+          {{ database_job_existing_wait.resources
+             | default(database_job_initial.resources)
+             | first | default({}) }}
+      no_log: true
+
+    - name: Require the existing Job to finish within ten minutes
+      ansible.builtin.assert:
+        that:
+          - (database_job_current | database_job_state) != 'running'
+        fail_msg: "Could not establish a terminal state for the existing database setup Job within ten minutes."
+
+    - name: Reuse a completed database setup Job
+      ansible.builtin.debug:
+        msg: "Reusing completed database setup Job {{ database_job_definition.metadata.name }}."
+      when: (database_job_current | database_job_state) == 'complete'
+
+    - name: Read pod status for a failed database setup Job
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        kind: Pod
+        namespace: contact-form
+        label_selectors:
+          - "batch.kubernetes.io/job-name={{ database_job_definition.metadata.name }}"
+      register: database_job_failed_pods
+      when: (database_job_current | database_job_state) == 'failed'
+      no_log: true
+
+    - name: Report safe diagnostics before retrying the failed Job
+      ansible.builtin.debug:
+        msg: >-
+          Database setup Job {{ database_job_definition.metadata.name }} failed:
+          {{ database_job_current | database_job_diagnostics(database_job_failed_pods.resources) | to_json }}.
+          Deleting it and retrying once.
+      when: (database_job_current | database_job_state) == 'failed'
+
+    - name: Delete the failed database setup Job
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: absent
+        api_version: batch/v1
+        kind: Job
+        namespace: contact-form
+        name: "{{ database_job_definition.metadata.name }}"
+        wait: true
+        wait_timeout: 120
+      when: (database_job_current | database_job_state) == 'failed'
+
+    - name: Create the missing or previously failed database setup Job
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig_path }}"
         state: present
-        definition: "{{ lookup('template', playbook_dir ~ '/templates/database-job.yml.j2') | from_yaml }}"
-        wait: true
-        wait_condition:
-          type: Complete
-          status: "True"
-        wait_timeout: 600
+        definition: "{{ database_job_definition }}"
+      when: (database_job_current | database_job_state) in ['absent', 'failed']
+      no_log: true
+
+    - name: Wait for the new database setup Job to finish
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: batch/v1
+        kind: Job
+        namespace: contact-form
+        name: "{{ database_job_definition.metadata.name }}"
+      register: database_job_new_wait
+      until: >-
+        ((database_job_new_wait.resources | default([]) | first | default({}))
+        | database_job_state) in ['complete', 'failed']
+      retries: 60
+      delay: 10
+      when: (database_job_current | database_job_state) in ['absent', 'failed']
+      ignore_errors: true
+      no_log: true
+
+    - name: Require the new database setup Job to finish within ten minutes
+      ansible.builtin.assert:
+        that:
+          - >-
+            ((database_job_new_wait.resources | default([]) | first | default({}))
+            | database_job_state) in ['complete', 'failed']
+        fail_msg: "The new database setup Job did not reach a terminal state within ten minutes."
+      when: (database_job_current | database_job_state) in ['absent', 'failed']
+
+    - name: Read pod status if the new database setup Job failed
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        kind: Pod
+        namespace: contact-form
+        label_selectors:
+          - "batch.kubernetes.io/job-name={{ database_job_definition.metadata.name }}"
+      register: database_job_new_failed_pods
+      when: >-
+        ((database_job_new_wait.resources | default([]) | first | default({}))
+        | database_job_state) == 'failed'
+      no_log: true
+
+    - name: Report safe diagnostics for the new failed Job
+      ansible.builtin.debug:
+        msg: >-
+          Database setup Job {{ database_job_definition.metadata.name }} failed:
+          {{ (database_job_new_wait.resources | first)
+             | database_job_diagnostics(database_job_new_failed_pods.resources) | to_json }}.
+      when: >-
+        ((database_job_new_wait.resources | default([]) | first | default({}))
+        | database_job_state) == 'failed'
+
+    - name: Stop deployment if the new database setup Job failed
+      ansible.builtin.fail:
+        msg: "Database setup failed; a subsequent run will recreate this failed Job."
+      when: >-
+        ((database_job_new_wait.resources | default([]) | first | default({}))
+        | database_job_state) == 'failed'
 
     - name: Bind the Flask service account to its read-only secret role
       kubernetes.core.k8s:
