@@ -1,8 +1,8 @@
 # AWS Contact Form on EKS — Implementation Plan
 
-**Status:** Design agreed; the application is implemented and verified locally. AWS infrastructure and deployment are not implemented.
+**Status:** Design agreed; the application is verified locally. The Terraform state bucket is applied and verified in AWS. Foundation/workload infrastructure and the application have not been deployed.
 
-**Objective:** Deploy a Flask contact form accepting name, email and message, with persistence in RDS PostgreSQL. Provision AWS infrastructure through Terraform and deploy the application through Ansible, entirely from the local workstation. No manual AWS Console resource provisioning.
+**Objective:** Deploy a Flask contact form accepting name, email and message, with persistence in RDS PostgreSQL. Provision AWS infrastructure through Terraform and deploy the application through Ansible, entirely from the local workstation. Application infrastructure is provisioned from the workstation, not manually in the AWS Console. Initial IAM access policies were attached in the Console as an account prerequisite.
 
 **Official deadline:** Tuesday 29 September 2026, 18:00 Singapore time. **Personal target:** Sunday 27 September 2026, 23:59; aim to finish by 20:00 to leave time for fixes.
 
@@ -12,7 +12,7 @@
 - Verified laptop checkout: `/home/limch/projects/aws-contact-form-eks` in WSL Ubuntu; branch `main`, tracking `origin/main`. Independently verify the PC checkout.
 - Primary development: PC. Possible live demo: laptop. Use the same Git revision and pinned tool versions; complete a full laptop rehearsal.
 - Use AWS account **`203888389134`** in **Singapore, `ap-southeast-1`**.
-- AWS access is unverified. The old laptop CLI profile `cheelong` was removed; `contact-form-demo` was reported to contain an expired root login. Verify the PC's CLI identity separately.
+- PC WSL CLI identity was verified as `arn:aws:iam::203888389134:user/contact-form-deployer` in `ap-southeast-1`. Recheck the profile before future applies and separately verify the laptop.
 - Before changing anything in AWS, confirm that the login is non-root, belongs to the intended account and has the required permissions.
 - Work through phases in order and mark tasks complete only after verification. Record completed work, evidence, blockers, and the next action in section 6.
 
@@ -114,7 +114,8 @@ Plan approximately ten focused hours per day. Phase durations are estimates.
 
 *Day 1, hours 4–6*
 
-- [ ] Create persistent state, DNS and evidence resources. Create the empty application secret as part of the disposable runtime environment.
+- [x] Create and verify the persistent S3 state bucket.
+- [ ] Create DNS and evidence resources. Create the empty application secret as part of the disposable runtime environment.
 - [ ] Create the network, two NAT gateways, private EKS API, two managed node groups, EKS core add-ons, relay, ECR and Multi-AZ RDS.
 - [ ] Guard against deploying to the wrong account or region. Give the controller, database setup Job, Flask and deployment identities only their required permissions.
 - [ ] Let RDS generate and manage the master password. Pass secret identifiers (ARNs) through Terraform, keeping actual passwords out of Terraform inputs, outputs and state.
@@ -209,9 +210,11 @@ Declare retained prerequisites: domain/DNS, state backend, required foundation e
 
 **Completed (26 September 2026):** requirements review, architecture decisions, diagram, and local application implementation. The WSL profile `contact-form-deployer` previously returned a non-root IAM user in account `203888389134`, with Region `ap-southeast-1`; reconfirm the current session before provisioning. Dockerized PostgreSQL accepted a browser form submission and stored its row. Thirteen focused tests passed; the Gunicorn image runs as UID/GID 10001. The disposable local containers and network were removed with `make down`. Full AWS rebuilds are planned to create a fresh database; snapshot restoration is excluded.
 
-**Pending:** deployment IAM permissions, SSM plugin, Singapore quotas and cost estimate, credit eligibility, domain purchase, Terraform and Ansible implementation, AWS deployment, security findings, teardown/rebuild, and laptop rehearsal. No assignment infrastructure has been provisioned through this repository.
+**AWS bootstrap completed (26 September 2026):** the scoped `ContactFormTerraformStateAccess` and temporary `ContactFormTerraformBucketSetup` inline policies were attached to the non-root deployer; the temporary policy was removed after bootstrap verification. Terraform created the S3 state bucket in account `203888389134`, Region `ap-southeast-1`. The first apply created the bucket but lacked `s3:GetBucketAcl`; after adding the provider's required read actions, the bucket was confirmed in AWS, its taint was safely removed from local state, and a second apply configured the five remaining settings. A fresh Terraform plan reported `No changes`. Direct AWS reads verified versioning, four public-access blocks, SSE-S3 `AES256`, enforced bucket ownership, and the deny-insecure-transport policy. The bootstrap state is local, Git-ignored, and restricted to owner-only mode `600`; no foundation/workload state objects have been written.
 
-**Next action:** reconfirm the current non-root AWS profile and Region, inspect deployment permissions and quotas, then finish the Singapore cost and teardown review. Implement and validate the Terraform bootstrap tier before presenting a concrete plan for approval; do not apply paid resources before cost confirmation.
+**Pending:** check ongoing backend access after removing the temporary bucket-setup policy; preserve a secure backup of the local bootstrap state; verify the SSM plugin, Singapore quotas and full-stack cost estimate, credit eligibility, domain purchase, foundation/workload Terraform and Ansible implementation, AWS deployment, security findings, teardown/rebuild, and laptop rehearsal. No EKS, RDS, NAT, ALB, or application AWS infrastructure has been provisioned.
+
+**Next action:** wait for S3 versioning to propagate before the first backend state write; verify backend access through the ongoing state-access policy. Price and implement the persistent foundation tier before its separate cost approval and apply. Do not apply paid foundation or workload resources without explicit cost confirmation.
 
 ## References
 

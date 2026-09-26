@@ -1,11 +1,15 @@
-# Terraform scaffold
+# Terraform roots
 
-This directory contains three separate root modules. None defines AWS resources yet.
+The three roots have different lifecycles:
 
-- bootstrap/: create the persistent state backend from the workstation.
-- foundation/: retain DNS, state, and required evidence resources between demos.
-- workload/: disposable VPC, EKS, RDS, IAM, ECR, and application secret metadata.
+| Root | Status | Purpose |
+| --- | --- | --- |
+| `bootstrap/` | Applied and verified in account `203888389134` | Persistent encrypted, versioned S3 bucket for Terraform state and lockfiles |
+| `foundation/` | Placeholder | Resources retained between workload teardown and redeployment |
+| `workload/` | Placeholder | Disposable VPC, EKS, RDS, IAM, ECR, and application secret metadata |
 
-Use separate state for foundation and workload. Add account/Region guards,
-provider version constraints, remote backend configuration, and resource modules
-before any apply. Review Singapore costs and teardown first.
+Bootstrap's state is local at `bootstrap/terraform.tfstate` and excluded from Git. Preserve it securely. Foundation already has a local S3 backend file and was initialized; its current empty configuration has not created resources or written a state object. Workload still has only a backend example. The two roots use different S3 keys.
+
+The bootstrap plan reported `No changes` while the temporary bucket-setup policy was attached. That policy was then removed. To refresh or plan `terraform/bootstrap/` again, temporarily restore its setup/read permissions; the ongoing state-access policy alone only covers the foundation and workload S3 state objects and locks. Do not reapply or destroy bootstrap without reviewing the plan. Test the separate backend access using the ongoing state-access policy alone. Reattach the setup policy temporarily for deliberate bootstrap maintenance. Full state-bucket teardown also requires removing prevent_destroy and granting explicit deletion permissions after foundation and workload are gone.
+
+Review the actual Singapore cost and teardown plan separately before any foundation or workload apply.

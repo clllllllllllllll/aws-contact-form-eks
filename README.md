@@ -2,7 +2,7 @@
 
 A Flask contact form for name, email, and message. PostgreSQL on Amazon RDS stores submissions; Amazon EKS runs the app. Terraform owns the AWS infrastructure, and Ansible owns the Kubernetes deployment.
 
-**Status (26 September 2026):** The design, diagram, Flask form, PostgreSQL schema, local integration tests, and Docker image are present. Thirteen local tests passed, and a Dockerized browser submission was stored in disposable PostgreSQL. Terraform AWS resources, Ansible deployment tasks, and AWS deployment are not implemented or verified. The runbook below describes the intended AWS sequence; its apply and deployment commands cannot yet produce this environment.
+**Status (26 September 2026):** The Flask form, PostgreSQL schema, local tests, and Docker image are verified; thirteen tests passed and a local browser submission reached PostgreSQL. The Terraform state bucket is provisioned and verified in AWS. Foundation and workload Terraform, Ansible deployment, EKS, RDS, and the ALB are not yet implemented or deployed. The remaining AWS runbook is a target sequence until those tiers are tested.
 
 ## Architecture
 
@@ -30,12 +30,12 @@ Present now:
 | `docs/architecture.png` | High-level architecture diagram |
 | `docs/security.md` | Template for actual controls, findings, and exceptions |
 | `app/` | Flask form, SQL schema, Docker image, local Makefile, and integration tests; verified locally |
-| `terraform/bootstrap/`, `terraform/foundation/`, `terraform/workload/` | Terraform root-module placeholders; no AWS resources |
+| `terraform/bootstrap/`, `terraform/foundation/`, `terraform/workload/` | Applied state-bucket bootstrap; foundation and workload remain placeholders |
 | `ansible/` | Playbook and role placeholders; playbooks stop until implemented |
 | `scripts/` | Placeholder for local deployment helpers |
 | `.gitignore` | Excludes local secrets, state, plans, and generated files |
 
-The Terraform and Ansible scaffolds mark their unfinished entry points. No AWS resources have been created by these files.
+The foundation/workload Terraform and Ansible scaffolds mark their unfinished entry points. Only the Terraform state bucket and its configuration have been created in AWS.
 
 ## Prerequisites and cost gate
 
@@ -44,8 +44,8 @@ Use a non-root AWS identity in account `203888389134` and Region `ap-southeast-1
 Run these **read-only checks** from the workstation:
 
 ```bash
-aws sts get-caller-identity
-aws configure list
+aws sts get-caller-identity --profile contact-form-deployer
+aws configure list --profile contact-form-deployer
 aws --version
 terraform version
 ansible --version
@@ -57,36 +57,56 @@ session-manager-plugin --version
 
 Check that the AWS identity is not root, the account ID is correct, Docker can reach its daemon, and the SSM plugin starts. `aws configure list` shows where credentials and the default Region come from; do not paste access keys into the repository.
 
-**Do not run a Terraform apply until the Singapore cost estimate and teardown plan have been reviewed and approved.** Price the EKS cluster, two EC2 workers, two NAT gateways and data processing, the SSM relay, Multi-AZ RDS, ALB, Secrets Manager, ECR, Config/Security Hub, logs, DNS, public IPv4 addresses, and storage that remains after teardown. Check the account's credits, their expiry, and budget alerts. A US$10 monthly budget with a US$5 actual-cost email alert has been configured; it is not a hard spending cap. The full Singapore estimate and credit eligibility still need verification. Domain registration is a separate cost.
+**Do not apply foundation or workload Terraform until each tier's Singapore cost estimate and teardown plan have been reviewed and approved.** The state bucket was approved separately; with small state files and ordinary runs, its expected cost is well under US$1 for the assignment week, not a fixed fee or cap. Price the EKS cluster, two EC2 workers, two NAT gateways and data processing, the SSM relay, Multi-AZ RDS, ALB, Secrets Manager, ECR, Config/Security Hub, logs, DNS, public IPv4 addresses, and storage that remains after teardown. Check the account's credits, their expiry, and budget alerts. A US$10 monthly budget with a US$5 actual-cost email alert has been configured; it is not a hard spending cap. The full Singapore estimate and credit eligibility still need verification. Domain registration is a separate cost.
 
 Never commit AWS credentials, Terraform state or plan files, kubeconfig, private keys, database passwords, or real contact-form submissions.
 
+## Verified Terraform state bootstrap
+
+The non-root `contact-form-deployer` user in account `203888389134` created the state bucket `aws-contact-form-eks-tfstate-203888389134-ap-southeast-1` in Singapore. Terraform reported no drift after apply. Direct AWS checks returned versioning `Enabled`, all four public-access blocks `true`, default SSE-S3 encryption `AES256`, and `BucketOwnerEnforced` ownership. The bucket policy denies S3 requests when `aws:SecureTransport` is `false`. No foundation or workload state objects have been written yet.
+
+For a fresh setup in this specific AWS account, attach the scoped `terraform/bootstrap/bucket-setup-policy.json` and `state-access-policy.json` as inline policies on an authorized non-root deployer before running:
+
+```bash
+cd /home/limch/projects/aws-contact-form-eks
+umask 077
+aws sts get-caller-identity --profile contact-form-deployer
+terraform -chdir=terraform/bootstrap init
+AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/bootstrap plan -no-color
+AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/bootstrap apply -no-color
+AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/bootstrap plan -no-color
+```
+
+Confirm the account and review the plan and cost before typing `yes` at apply. The last plan should say `No changes`. The IAM policies are one-time account access setup performed in the IAM Console; the S3 resource itself was created by Terraform. The bucket-setup policy was removed after bootstrap verification on 26 September 2026; the ongoing state-access policy remains. Test backend access with that policy alone. Restore the setup policy temporarily for deliberate bootstrap maintenance. A full bucket teardown needs a separately reviewed deletion procedure after foundation and workload are gone.
+
+Bootstrap state stays local at `terraform/bootstrap/terraform.tfstate` and is excluded from Git. The state and backup were restricted to owner-only mode `600`; use `umask 077` before future local Terraform runs. Preserve it securely: the S3 backend makes **foundation and workload state** shareable between workstations, not bootstrap's own local state. Do not run bootstrap apply from another checkout without first restoring this state or deliberately importing the bucket. AWS recommends waiting 15 minutes after first enabling S3 versioning before writing state objects to the bucket. [S3 versioning guidance](https://docs.aws.amazon.com/AmazonS3/latest/userguide/manage-versioning-examples.html).
+
 ## Deployment runbook
 
-This is the target order for the local-workstation deployment. The paths exist, but the Terraform roots have no resources and the Ansible playbooks stop intentionally. Complete and test each stage before using the apply or deployment commands. Review the actual plan and cost before each apply.
+This is the target order for the local-workstation deployment. Bootstrap is applied and verified; foundation/workload Terraform and Ansible still stop intentionally or lack resources. Complete and test each remaining stage before using its apply or deployment commands. Review the actual plan and cost before each apply.
 
 1. **Build and test the app locally.** Start a local PostgreSQL instance, run the Flask tests, submit a test form, and query the saved row. Build the container and confirm it runs as a non-root user. Local development may use a separate local database credential; production credentials come from Secrets Manager.
-2. **Bootstrap remote Terraform state.** Create the encrypted, versioned S3 backend and locking through `terraform/bootstrap/`. Preserve the bootstrap state securely. Do not put secrets in Terraform inputs or outputs.
+2. **Bootstrap remote Terraform state (done for this account).** The encrypted, versioned S3 bucket is ready for foundation/workload state and S3 lockfiles. Preserve the local bootstrap state securely. Do not put secrets in Terraform inputs or outputs.
 3. **Apply the persistent foundation.** Use `terraform/foundation/` for the state, DNS, retained logs/evidence, and other resources intended to survive a demo teardown. Inspect existing account-wide security services before trying to manage them.
 4. **Apply the runtime infrastructure.** Use `terraform/workload/` for the VPC, two NAT gateways, private EKS cluster and worker groups, private relay, RDS Multi-AZ instance, application secret metadata, ECR, IAM roles, and security groups. Review the plan before applying it. Confirm Terraform outputs contain identifiers and endpoints, not secret values.
 5. **Open the management tunnel.** Start an SSM port-forwarding session from the workstation through the private relay to the private EKS API. Use the tunnel-aware kubeconfig with TLS hostname verification intact. The exact script and local port will be fixed when implemented. Verify `kubectl get nodes` before running Ansible.
 6. **Run Ansible locally.** The planned `ansible/deploy.yml` builds and pushes an immutable image to private ECR, installs the pinned AWS Load Balancer Controller, and applies the namespace, service accounts, RBAC, database setup Job, Deployment, ClusterIP Service, and HTTPS Ingress. The database Job creates the restricted app user and table on a fresh database; a rerun must reuse credentials and preserve rows. Ansible then waits for healthy ALB targets and creates the Route 53 alias.
 7. **Verify the site and security controls.** Submit synthetic data through HTTPS, query its row from a controlled client inside the VPC, and record the evidence listed below. Run Ansible again and check that it makes no unwanted changes.
 
-The intended Terraform invocation pattern, **after resource definitions and backend settings are implemented**, is:
+The Terraform invocation pattern is below. Bootstrap has been run and verified for this account; foundation/workload remain examples until their resources and backend settings are implemented:
 
 ```bash
-terraform -chdir=terraform/bootstrap init
-terraform -chdir=terraform/bootstrap plan
-terraform -chdir=terraform/bootstrap apply
+AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/bootstrap init
+AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/bootstrap plan
+AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/bootstrap apply
 
-terraform -chdir=terraform/foundation init
-terraform -chdir=terraform/foundation plan
-terraform -chdir=terraform/foundation apply
+AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/foundation init
+AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/foundation plan
+AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/foundation apply
 
-terraform -chdir=terraform/workload init
-terraform -chdir=terraform/workload plan
-terraform -chdir=terraform/workload apply
+AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/workload init
+AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/workload plan
+AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/workload apply
 ```
 
 After the deployment playbook is implemented and the tunnel is working, the intended command is:
