@@ -2,7 +2,7 @@
 
 A Flask contact form for name, email, and message. PostgreSQL on Amazon RDS stores submissions; Amazon EKS runs the app. Terraform owns the AWS infrastructure, and Ansible owns the Kubernetes deployment.
 
-**Status (26 September 2026):** The design, diagram, and directory scaffolds are present. The Flask form and database logic, Terraform AWS resources, Ansible deployment tasks, and AWS deployment are not implemented or verified. The runbook below describes the intended sequence; its apply and deployment commands cannot produce this environment from the current scaffold.
+**Status (26 September 2026):** The design, diagram, Flask form, PostgreSQL schema, local integration tests, and Docker image are present. Thirteen local tests passed, and a Dockerized browser submission was stored in disposable PostgreSQL. Terraform AWS resources, Ansible deployment tasks, and AWS deployment are not implemented or verified. The runbook below describes the intended AWS sequence; its apply and deployment commands cannot yet produce this environment.
 
 ## Architecture
 
@@ -29,13 +29,13 @@ Present now:
 | `ASSIGNMENT_PLAN.md` | Implementation decisions and task tracking |
 | `docs/architecture.png` | High-level architecture diagram |
 | `docs/security.md` | Template for actual controls, findings, and exceptions |
-| `app/` | Flask, SQL, Docker, and test placeholders; no application logic |
+| `app/` | Flask form, SQL schema, Docker image, local Makefile, and integration tests; verified locally |
 | `terraform/bootstrap/`, `terraform/foundation/`, `terraform/workload/` | Terraform root-module placeholders; no AWS resources |
 | `ansible/` | Playbook and role placeholders; playbooks stop until implemented |
 | `scripts/` | Placeholder for local deployment helpers |
 | `.gitignore` | Excludes local secrets, state, plans, and generated files |
 
-Each scaffold has a short README or comment marking its unfinished entry points. No AWS resources have been created by these files.
+The Terraform and Ansible scaffolds mark their unfinished entry points. No AWS resources have been created by these files.
 
 ## Prerequisites and cost gate
 
@@ -57,7 +57,7 @@ session-manager-plugin --version
 
 Check that the AWS identity is not root, the account ID is correct, Docker can reach its daemon, and the SSM plugin starts. `aws configure list` shows where credentials and the default Region come from; do not paste access keys into the repository.
 
-**Do not run a Terraform apply until the Singapore cost estimate and teardown plan have been reviewed and approved.** Price the EKS cluster, two EC2 workers, two NAT gateways and data processing, the SSM relay, Multi-AZ RDS, ALB, Secrets Manager, ECR, Config/Security Hub, logs, DNS, public IPv4 addresses, and storage that remains after teardown. Check the account's credits, their expiry, and budget alerts. Neither the estimate nor the budget alert has been verified yet. Domain registration is a separate cost.
+**Do not run a Terraform apply until the Singapore cost estimate and teardown plan have been reviewed and approved.** Price the EKS cluster, two EC2 workers, two NAT gateways and data processing, the SSM relay, Multi-AZ RDS, ALB, Secrets Manager, ECR, Config/Security Hub, logs, DNS, public IPv4 addresses, and storage that remains after teardown. Check the account's credits, their expiry, and budget alerts. A US$10 monthly budget with a US$5 actual-cost email alert has been configured; it is not a hard spending cap. The full Singapore estimate and credit eligibility still need verification. Domain registration is a separate cost.
 
 Never commit AWS credentials, Terraform state or plan files, kubeconfig, private keys, database passwords, or real contact-form submissions.
 

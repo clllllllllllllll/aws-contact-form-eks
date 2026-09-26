@@ -1,6 +1,6 @@
 # AWS Contact Form on EKS — Implementation Plan
 
-**Status:** Design agreed; application and infrastructure are not implemented.
+**Status:** Design agreed; the application is implemented and verified locally. AWS infrastructure and deployment are not implemented.
 
 **Objective:** Deploy a Flask contact form accepting name, email and message, with persistence in RDS PostgreSQL. Provision AWS infrastructure through Terraform and deploy the application through Ansible, entirely from the local workstation. No manual AWS Console resource provisioning.
 
@@ -207,11 +207,11 @@ Declare retained prerequisites: domain/DNS, state backend, required foundation e
 
 ## 6. Progress and next action
 
-**Completed:** requirements review, repository checks, architecture decisions, and diagram. Full rebuilds create a fresh database; snapshot restoration is excluded.
+**Completed (26 September 2026):** requirements review, architecture decisions, diagram, and local application implementation. The WSL profile `contact-form-deployer` previously returned a non-root IAM user in account `203888389134`, with Region `ap-southeast-1`; reconfirm the current session before provisioning. Dockerized PostgreSQL accepted a browser form submission and stored its row. Thirteen focused tests passed; the Gunicorn image runs as UID/GID 10001. The disposable local containers and network were removed with `make down`. Full AWS rebuilds are planned to create a fresh database; snapshot restoration is excluded.
 
-**Pending:** non-root AWS verification, domain purchase, cost estimate, implementation, deployment and rehearsal.
+**Pending:** deployment IAM permissions, SSM plugin, Singapore quotas and cost estimate, credit eligibility, domain purchase, Terraform and Ansible implementation, AWS deployment, security findings, teardown/rebuild, and laptop rehearsal. No assignment infrastructure has been provisioned through this repository.
 
-**Next action:** confirm non-root access to account `203888389134` and estimate costs before provisioning any AWS resources. On another workstation, sync the repository without overwriting local changes, then start Phase 0.
+**Next action:** reconfirm the current non-root AWS profile and Region, inspect deployment permissions and quotas, then finish the Singapore cost and teardown review. Implement and validate the Terraform bootstrap tier before presenting a concrete plan for approval; do not apply paid resources before cost confirmation.
 
 ## References
 
