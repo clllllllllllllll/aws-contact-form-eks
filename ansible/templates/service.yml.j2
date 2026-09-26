@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: contact-form
+  namespace: contact-form
+  labels:
+    app.kubernetes.io/name: contact-form
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: contact-form
+    app.kubernetes.io/component: web
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+      protocol: TCP

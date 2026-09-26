@@ -24,3 +24,6 @@ __pycache__/
 # Editor and OS
 .DS_Store
 .vscode/
+
+# Generated workstation deployment context
+.local/

@@ -2,7 +2,7 @@
 
 A Flask contact form for name, email, and message. PostgreSQL on Amazon RDS stores submissions; Amazon EKS runs the app. Terraform owns the AWS infrastructure, and Ansible owns the Kubernetes deployment.
 
-**Status (26 September 2026):** The Flask form, PostgreSQL schema, local tests, and Docker image are verified; thirteen tests passed and a local browser submission reached PostgreSQL. The Terraform state bucket is provisioned and verified in AWS. Foundation Terraform is drafted and passes local validation, but has not been applied. Workload Terraform and the database setup script are also drafted and locally validated, but Ansible, EKS, RDS, and the ALB are not deployed. The remaining AWS runbook is a target sequence until those tiers are tested.
+**Status (26 September 2026):** The Flask form, PostgreSQL schema, local tests, and Docker image are verified; thirteen tests passed and a local browser submission reached PostgreSQL. The Terraform state bucket is provisioned and verified in AWS. Foundation and workload Terraform are drafted and locally validated but have not been applied. Ansible playbooks, Kubernetes manifests, and workstation helpers are drafted and pass local syntax checks, but have not been run against AWS. No EKS, RDS, or ALB resources have been deployed.
 
 ## Architecture
 
@@ -31,11 +31,11 @@ Present now:
 | `docs/security.md` | Template for actual controls, findings, and exceptions |
 | `app/` | Flask form, SQL schema, Docker image, local Makefile, and integration tests; verified locally |
 | `terraform/bootstrap/`, `terraform/foundation/`, `terraform/workload/` | Applied state-bucket bootstrap; foundation and workload are locally validated drafts; neither is applied |
-| `ansible/` | Playbook and role placeholders; playbooks stop until implemented |
-| `scripts/` | Placeholder for local deployment helpers |
+| `ansible/` | Draft deploy/cleanup playbooks, manifests and runbook; locally syntax checked |
+| `scripts/` | Draft tunnel, image publishing and ALB/DNS helpers |
 | `.gitignore` | Excludes local secrets, state, plans, and generated files |
 
-Foundation Terraform is locally validated but has not been applied; workload is a locally validated draft; Ansible remains unfinished. Only the Terraform state bucket and its configuration have been created in AWS.
+Foundation Terraform is locally validated but has not been applied; workload is a locally validated draft; Ansible is drafted but untested against EKS. Only the Terraform state bucket and its configuration have been created in AWS.
 
 ## Prerequisites and cost gate
 
@@ -54,6 +54,15 @@ helm version
 docker version
 session-manager-plugin --version
 ```
+
+For a fresh Python environment, install the pinned workstation packages and Ansible collection:
+
+    python3 -m venv /home/limch/.venvs/assignment
+    source /home/limch/.venvs/assignment/bin/activate
+    python -m pip install --no-cache-dir -r requirements-workstation.txt
+    ansible-galaxy collection install -r ansible/requirements.yml
+
+The Botocore CRT extra is required for this workstation's AWS login method. The repository contains no AWS access keys.
 
 Check that the AWS identity is not root, the account ID is correct, Docker can reach its daemon, and the SSM plugin starts. `aws configure list` shows where credentials and the default Region come from; do not paste access keys into the repository.
 
@@ -83,14 +92,14 @@ Bootstrap state stays local at `terraform/bootstrap/terraform.tfstate` and is ex
 
 ## Deployment runbook
 
-This is the target order for the local-workstation deployment. Bootstrap is applied and verified; foundation Terraform is a locally validated draft; workload is a locally validated draft and Ansible is not yet implemented. Complete and test each remaining stage before using its apply or deployment commands. Review the actual plan and cost before each apply.
+This is the target order for the local-workstation deployment. Bootstrap is applied and verified; foundation Terraform is a locally validated draft; workload is a locally validated draft and Ansible is drafted but not deployed. Complete and test each remaining stage before using its apply or deployment commands. Review the actual plan and cost before each apply.
 
 1. **Build and test the app locally.** Start a local PostgreSQL instance, run the Flask tests, submit a test form, and query the saved row. Build the container and confirm it runs as a non-root user. Local development may use a separate local database credential; production credentials come from Secrets Manager.
 2. **Bootstrap remote Terraform state (done for this account).** The encrypted, versioned S3 bucket is ready for foundation/workload state and S3 lockfiles. Preserve the local bootstrap state securely. Do not put secrets in Terraform inputs or outputs.
 3. **Apply the persistent foundation.** Use `terraform/foundation/` for the state, DNS, retained logs/evidence, and other resources intended to survive a demo teardown. Inspect existing account-wide security services before trying to manage them.
 4. **Apply the runtime infrastructure.** Use `terraform/workload/` for the VPC, two NAT gateways, private EKS cluster and worker groups, private relay, RDS Multi-AZ instance, application secret metadata, ECR, IAM roles, and security groups. Review the plan before applying it. Confirm Terraform outputs contain identifiers and endpoints, not secret values.
-5. **Open the management tunnel.** Start an SSM port-forwarding session from the workstation through the private relay to the private EKS API. Use the tunnel-aware kubeconfig with TLS hostname verification intact. The exact script and local port will be fixed when implemented. Verify `kubectl get nodes` before running Ansible.
-6. **Run Ansible locally.** The planned `ansible/deploy.yml` builds and pushes an immutable image to private ECR, installs the pinned AWS Load Balancer Controller, and applies the namespace, service accounts, RBAC, database setup Job, Deployment, ClusterIP Service, and HTTPS Ingress. The database Job creates the restricted app user and table on a fresh database; a rerun must reuse credentials and preserve rows. Ansible then waits for healthy ALB targets and creates the Route 53 alias.
+5. **Open the management tunnel.** Start an SSM port-forwarding session from the workstation through the private relay to the private EKS API. Use the tunnel-aware kubeconfig with TLS hostname verification intact. The drafted scripts/open_tunnel.py writes a TLS-verifying kubeconfig and forwards local port 8443. Verify `kubectl get nodes` before running Ansible.
+6. **Run Ansible locally.** The drafted `ansible/deploy.yml` builds and pushes an immutable image to private ECR, installs the pinned AWS Load Balancer Controller, and applies the namespace, service accounts, RBAC, database setup Job, Deployment, ClusterIP Service, and HTTPS Ingress. The database Job creates the restricted app user and table on a fresh database; a rerun must reuse credentials and preserve rows. Ansible then waits for healthy ALB targets and creates the Route 53 alias.
 7. **Verify the site and security controls.** Submit synthetic data through HTTPS, query its row from a controlled client inside the VPC, and record the evidence listed below. Run Ansible again and check that it makes no unwanted changes.
 
 The Terraform invocation pattern is below. Bootstrap has been run and verified for this account; foundation is a draft and the remaining tiers need review, cost approval, and live testing:
@@ -109,13 +118,33 @@ AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/workload plan
 AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/workload apply
 ```
 
-After the deployment playbook is implemented and the tunnel is working, the intended command is:
+After the workload is applied and the tunnel works, the draft deployment command is:
 
 ```bash
-ansible-playbook -i 'localhost,' -c local ansible/deploy.yml
+ansible-playbook -i ansible/inventory.ini ansible/deploy.yml
 ```
 
-Before the live demo, update these examples with the tested scripts, variables, pinned versions, and tunnel command.
+The Ansible runbook gives the two-terminal tunnel/deploy sequence. These commands still require a live rehearsal and cost approval before use.
+
+## Drafted workstation deployment
+
+In terminal 1, activate the assignment virtualenv and open the SSM tunnel:
+
+    cd /home/limch/projects/aws-contact-form-eks
+    source /home/limch/.venvs/assignment/bin/activate
+    export AWS_PROFILE=contact-form-deployer
+    python3 scripts/open_tunnel.py
+
+In terminal 2, use the generated kubeconfig and run Ansible:
+
+    cd /home/limch/projects/aws-contact-form-eks
+    source /home/limch/.venvs/assignment/bin/activate
+    export AWS_PROFILE=contact-form-deployer
+    export KUBECONFIG="$PWD/.local/kubeconfig"
+    kubectl get nodes -L topology.kubernetes.io/zone
+    ansible-playbook -i ansible/inventory.ini ansible/deploy.yml
+
+The first command checks access to the private EKS API and worker placement. The playbook publishes or reuses an immutable image digest, installs the controller, initializes the restricted database user, applies the app and Ingress, creates the DNS alias and waits for HTTPS readiness. For cleanup, keep the tunnel open and run ansible-playbook -i ansible/inventory.ini ansible/teardown.yml before reviewing the Terraform destroy plan. See ansible/README.md for the exact sequence and safety checks. This sequence is drafted, not live-tested.
 
 ## IAM and database credentials
 
@@ -170,7 +199,7 @@ The runtime environment is disposable. **Destroying RDS deletes the contact-form
 
 1. Stop submissions. Remove the Route 53 app alias and Kubernetes Ingress through the Ansible cleanup workflow.
 2. Wait until the AWS Load Balancer Controller has deleted the ALB and target groups. Do not destroy EKS or the VPC first.
-3. Remove the remaining Kubernetes resources, close the SSM tunnel, and destroy `terraform/workload/`. The planned command is `terraform -chdir=terraform/workload destroy`; review its targets before confirming.
+3. Remove the remaining Kubernetes resources, close the SSM tunnel, and destroy `terraform/workload/`. The drafted command is `terraform -chdir=terraform/workload destroy`; review its targets before confirming.
 4. Verify that RDS, EKS, worker instances, ALB, NAT gateways, the relay, and unused Elastic IPs are gone. Keep only the declared foundation: state, DNS/domain, and required security evidence.
 5. Rebuild from Terraform, republish the image, and rerun Ansible. Use a fresh app secret name or another tested lifecycle strategy so Secrets Manager's deletion recovery window does not block recreation. Confirm the old demo row is absent and a new submission works.
 

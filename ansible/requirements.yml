@@ -1,3 +1,4 @@
 ---
-collections: []
-# Add and pin kubernetes.core when deployment tasks are implemented.
+collections:
+  - name: kubernetes.core
+    version: 6.6.0

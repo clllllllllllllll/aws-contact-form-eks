@@ -1,8 +1,262 @@
 ---
 - name: Deploy the contact form
-  hosts: localhost
+  hosts: local
+  connection: local
   gather_facts: false
+  vars:
+    repo_root: "{{ playbook_dir }}/.."
+    aws_profile: "{{ lookup('env', 'AWS_PROFILE') | default('contact-form-deployer', true) }}"
+    kubeconfig_path: "{{ lookup('env', 'KUBECONFIG') | default(repo_root ~ '/.local/kubeconfig', true) }}"
+  environment:
+    AWS_PROFILE: "{{ aws_profile }}"
+    AWS_REGION: ap-southeast-1
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  pre_tasks:
+    - name: Require the private EKS tunnel kubeconfig
+      ansible.builtin.assert:
+        that:
+          - kubeconfig_path is file
+        fail_msg: "Run python3 scripts/open_tunnel.py in a separate terminal first."
+
+    - name: Verify the deployment account
+      ansible.builtin.command:
+        argv:
+          - aws
+          - sts
+          - get-caller-identity
+          - --profile
+          - "{{ aws_profile }}"
+          - --output
+          - json
+      register: identity_result
+      changed_when: false
+
+    - name: Require the approved non-root account
+      ansible.builtin.assert:
+        that:
+          - (identity_result.stdout | from_json).Account == '203888389134'
+          - not (identity_result.stdout | from_json).Arn.endswith(':root')
+
+    - name: Read the current workload outputs
+      ansible.builtin.command:
+        argv:
+          - terraform
+          - "-chdir={{ repo_root }}/terraform/workload"
+          - output
+          - -json
+      register: terraform_result
+      changed_when: false
+
+    - name: Keep the output values for deployment
+      ansible.builtin.set_fact:
+        tf: "{{ terraform_result.stdout | from_json }}"
+
+    - name: Require a validated public certificate
+      ansible.builtin.assert:
+        that:
+          - tf.certificate_arn.value is string
+          - tf.certificate_arn.value | length > 0
+        fail_msg: "Apply the DNS-validated foundation certificate before deployment."
+
+    - name: Verify the private cluster has two workers
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        kind: Node
+      register: cluster_nodes
+
+    - name: Require one Ready worker in each selected Availability Zone
+      ansible.builtin.assert:
+        that:
+          - cluster_nodes.resources | length == 2
+          - >-
+            (cluster_nodes.resources |
+            map(attribute='metadata.labels.demo_az') |
+            list | sort) == (tf.availability_zones.value | sort)
+        fail_msg: "Expected exactly one worker in each selected Availability Zone."
+
+    - name: Require every worker to be Ready
+      ansible.builtin.assert:
+        that:
+          - >-
+            item.status.conditions |
+            selectattr('type', 'equalto', 'Ready') |
+            selectattr('status', 'equalto', 'True') |
+            list | length == 1
+      loop: "{{ cluster_nodes.resources }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+
   tasks:
-    - name: Stop until deployment tasks are implemented
-      ansible.builtin.fail:
-        msg: "Scaffold only: Kubernetes and controller deployment tasks are not implemented."
+    - name: Publish the committed app image or reuse its digest
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ repo_root }}/scripts/publish_image.py"
+          - --profile
+          - "{{ aws_profile }}"
+          - --repository-url
+          - "{{ tf.ecr_repository_url.value }}"
+      register: image_result
+      changed_when: image_result.rc == 0 and (image_result.stdout | from_json).published
+
+    - name: Select the immutable application image
+      ansible.builtin.set_fact:
+        image_uri: "{{ (image_result.stdout | from_json).image_uri }}"
+
+    - name: Ensure the application namespace exists
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: contact-form
+
+    - name: Bind the controller service account to its IAM role
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: aws-load-balancer-controller
+            namespace: kube-system
+            annotations:
+              eks.amazonaws.com/role-arn: "{{ tf.controller_role_arn.value }}"
+
+    - name: Register the AWS controller chart repository
+      kubernetes.core.helm_repository:
+        repo_name: eks
+        repo_url: https://aws.github.io/eks-charts
+        repo_state: present
+
+    - name: Install the pinned AWS Load Balancer Controller
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig_path }}"
+        release_name: aws-load-balancer-controller
+        release_namespace: kube-system
+        release_state: present
+        chart_ref: eks/aws-load-balancer-controller
+        chart_version: 1.14.0
+        wait: true
+        timeout: 10m
+        release_values:
+          clusterName: "{{ tf.cluster_name.value }}"
+          region: ap-southeast-1
+          vpcId: "{{ tf.vpc_id.value }}"
+          image:
+            tag: v2.14.1
+          serviceAccount:
+            create: false
+            name: aws-load-balancer-controller
+          enableBackendSecurityGroup: false
+          enableManageBackendSecurityGroupRules: false
+          enableWaf: false
+          enableWafv2: false
+          enableShield: false
+          replicaCount: 2
+
+    - name: Bind the database setup service account to its IAM role
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: contact-form-db-setup
+            namespace: contact-form
+            annotations:
+              eks.amazonaws.com/role-arn: "{{ tf.database_setup_role_arn.value }}"
+
+    - name: Initialize or verify the restricted database user and schema
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        definition: "{{ lookup('template', playbook_dir ~ '/templates/database-job.yml.j2') | from_yaml }}"
+        wait: true
+        wait_condition:
+          type: Complete
+          status: "True"
+        wait_timeout: 600
+
+    - name: Bind the Flask service account to its read-only secret role
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: contact-form
+            namespace: contact-form
+            annotations:
+              eks.amazonaws.com/role-arn: "{{ tf.application_role_arn.value }}"
+
+    - name: Ensure the ClusterIP service exists
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        definition: "{{ lookup('template', playbook_dir ~ '/templates/service.yml.j2') | from_yaml }}"
+
+    - name: Deploy two Flask replicas in separate zones
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        definition: "{{ lookup('template', playbook_dir ~ '/templates/deployment.yml.j2') | from_yaml }}"
+        wait: true
+        wait_timeout: 600
+
+    - name: Create the HTTPS Ingress that provisions one ALB
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        definition: "{{ lookup('template', playbook_dir ~ '/templates/ingress.yml.j2') | from_yaml }}"
+
+    - name: Wait for the controller to publish the ALB hostname
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        kind: Ingress
+        namespace: contact-form
+        name: contact-form
+      register: ingress_result
+      until: >-
+        ingress_result.resources | length > 0 and
+        ingress_result.resources[0].status.loadBalancer.ingress is defined and
+        ingress_result.resources[0].status.loadBalancer.ingress | length > 0
+      retries: 60
+      delay: 10
+
+    - name: Create the Route 53 alias for this controller-owned ALB
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ repo_root }}/scripts/manage_alb.py"
+          - create
+          - --profile
+          - "{{ aws_profile }}"
+          - --zone-id
+          - "{{ tf.hosted_zone_id.value }}"
+          - --domain
+          - "{{ tf.domain_name.value }}"
+          - --dns-name
+          - "{{ ingress_result.resources[0].status.loadBalancer.ingress[0].hostname }}"
+      register: alias_result
+      until: alias_result.rc == 0
+      retries: 12
+      delay: 10
+      changed_when: alias_result.rc == 0 and (alias_result.stdout | from_json).changed
+
+    - name: Wait for the public HTTPS readiness check
+      ansible.builtin.uri:
+        url: "https://{{ tf.domain_name.value }}/health/ready"
+        method: GET
+        status_code: 200
+        validate_certs: true
+        return_content: false
+      register: website_result
+      until: website_result.status | default(0) == 200
+      retries: 60
+      delay: 10

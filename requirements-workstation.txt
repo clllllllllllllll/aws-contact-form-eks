@@ -1,0 +1,5 @@
+ansible-core==2.21.4
+boto3==1.43.100
+botocore[crt]==1.43.100
+kubernetes==36.0.3
+PyYAML==6.0.3

@@ -1,12 +1,48 @@
-# Ansible scaffold
+# Kubernetes deployment
 
-The deploy and teardown playbooks are intentionally guarded. Running either
-stops with a clear message until its tasks are implemented.
+These playbooks are drafted and pass local syntax checks. They have not yet been run against EKS. The AWS resources and cheelong.xyz certificate must exist before deployment. Use only synthetic submissions.
 
-Planned roles:
-- controller/: install the pinned AWS Load Balancer Controller.
-- database/: set up the schema and restricted application SQL user.
-- app/: deploy the namespace, service account, Deployment, Service, and Ingress.
+## Workstation sequence
 
-Use Terraform's non-secret outputs for resource identifiers. Never put a
-database password in Ansible variables, templates, or logs.
+Activate the existing virtualenv and confirm the intended account. On another workstation, install requirements-workstation.txt and the pinned ansible/requirements.yml collection first:
+
+    cd /home/limch/projects/aws-contact-form-eks
+    source /home/limch/.venvs/assignment/bin/activate
+    export AWS_PROFILE=contact-form-deployer
+    aws sts get-caller-identity --profile "$AWS_PROFILE"
+
+The identity check must show account 203888389134 and a non-root principal. In terminal 1, start the private API tunnel:
+
+    python3 scripts/open_tunnel.py
+
+This reads Terraform's non-secret workload outputs, checks the account, writes .local/kubeconfig with mode 600, and starts a Session Manager port forward through the private relay. The kubeconfig still verifies the original EKS API hostname and its CA. Leave the terminal open.
+
+In terminal 2, verify the tunnel and worker placement, then deploy:
+
+    cd /home/limch/projects/aws-contact-form-eks
+    source /home/limch/.venvs/assignment/bin/activate
+    export AWS_PROFILE=contact-form-deployer
+    export KUBECONFIG="$PWD/.local/kubeconfig"
+    kubectl get nodes -L topology.kubernetes.io/zone
+    ansible-playbook -i ansible/inventory.ini ansible/deploy.yml
+
+The node command checks that the private API is reachable and both workers are registered. The playbook reads Terraform outputs, reuses or publishes an immutable ECR image, installs the pinned controller chart, runs the restricted database setup Job, deploys two app replicas in different AZs, then applies the Ingress. The controller creates the physical ALB. After it reports an address, the playbook creates the apex Route 53 alias and waits for a verified HTTPS readiness response.
+
+A second playbook run must keep the same image digest and database credential when the app source and infrastructure have not changed. The setup Job may be recreated after its TTL expires; its script preserves the schema, secret and submitted rows.
+
+## Cleanup before Terraform destroy
+
+Keep the SSM tunnel running. Stop sending form submissions, then run:
+
+    ansible-playbook -i ansible/inventory.ini ansible/teardown.yml
+    AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/workload plan -destroy
+
+The playbook verifies the account, deletes only an alias pointing to this controller-owned ALB, removes the Ingress, and waits for ALB deletion. It then removes the controller and application namespace. Review the Terraform destroy plan before running terraform -chdir=terraform/workload destroy. A full workload destroy intentionally deletes RDS and demo submissions; the state bucket and foundation remain.
+
+The DNS helper saves a non-secret ownership record at .local/alb-alias.json. That record lets cleanup remove this exact alias if the ALB has already disappeared; an unrelated record is rejected. Keep the record on the workstation that deployed the site until cleanup is complete. If ALB deletion does not complete, the playbook stops. Investigate the controller and AWS resource state before destroying EKS or the VPC. The cleanup path has not yet been tested live.
+
+## Ownership and security
+
+Terraform owns AWS network rules, IAM roles, EKS, RDS, ECR and secret metadata. Ansible owns the controller release and Kubernetes resources. The app service account can read only its application secret; the setup Job uses a separate role for the master secret and initial database setup. The app service account has no Kubernetes RoleBinding. The controller uses the pre-created ALB security group and must not mutate security groups.
+
+Chart 1.14.0 runs controller image v2.14.1. Both backend security-group management flags are disabled, and the Ingress sets the Terraform security-group ID plus the matching annotation. The Ingress requests a TLS 1.2/1.3 listener and an HTTP-to-HTTPS redirect. The ALB-to-pod hop remains HTTP inside the VPC.
