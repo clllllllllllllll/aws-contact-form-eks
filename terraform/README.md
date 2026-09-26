@@ -61,13 +61,17 @@ For each later stage, set `FOUNDATION_STAGE` to its table entry and repeat the p
 
 ## Workload version inputs
 
-Before the first workload plan, run the [read-only preflight](../docs/preflight.md) with chosen versions. It writes `.local/verified-workload.tfvars.json` only after every required read succeeds. From the repository root, after the backend check and foundation certificate stage:
+Before the first workload plan, run the [read-only preflight](../docs/preflight.md) with chosen versions. It writes `.local/verified-workload.tfvars.json` only after every required read succeeds. From the repository root, initialize the workload backend after the backend check and foundation certificate stage.
+
+Before the full deployer plan below, complete the [trusted first-create stage](../docs/workload-permissions.md#required-trusted-bootstrap-and-demo-guide-change) under the [live-demo approval gates](../docs/live-demo.md#4-read-only-pins-and-fresh-runtime-plan). In the same reconciled backend, a separate trusted administrator must review and, after Singapore cost/credit review and explicit approval, apply a saved Terraform plan targeted at `aws_kms_key.eks` and `aws_secretsmanager_secret.app`. Read both exact ARNs from state, replace every exact-ARN placeholder in the KMS, EKS and Secrets Manager/ECR drafts, then validate/simulate and attach the final policies. Switch back to the deployer for a fresh full plan; earlier full plans are stale. Repeat this stage with new ARNs on rebuild.
 
 ```bash
 WORKLOAD_VARS="$PWD/.local/verified-workload.tfvars.json"
 terraform -chdir=terraform/workload init
+# On a fresh build or rebuild, complete trusted first-create and policy attachment first.
 terraform -chdir=terraform/workload plan -input=false -var-file="$WORKLOAD_VARS" -out=workload.tfplan
 terraform -chdir=terraform/workload show -no-color workload.tfplan
+# Apply only this reviewed saved plan after the cost/credit check and explicit approval.
 terraform -chdir=terraform/workload apply workload.tfplan
 ```
 

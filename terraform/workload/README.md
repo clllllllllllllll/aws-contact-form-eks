@@ -19,12 +19,16 @@ Terraform owns the ALB and worker security-group rules. The Ingress and controll
 
 ## Verified version file
 
-EKS minor, all three add-on versions, managed node AL2023 release, its SSM parameter version and AMI ID, and the relay AL2023 AMI are required Terraform inputs without defaults. The checked-in [example](version-inputs.tfvars.json.example) contains invalid placeholders; preflight fills the two node evidence fields in the verified output. Follow the [preflight procedure](../../docs/preflight.md) to choose and verify values, then retain `.local/verified-workload.tfvars.json` through teardown. From the repository root, after backend initialization and approval:
+EKS minor, all three add-on versions, managed node AL2023 release, its SSM parameter version and AMI ID, and the relay AL2023 AMI are required Terraform inputs without defaults. The checked-in [example](version-inputs.tfvars.json.example) contains invalid placeholders; preflight fills the two node evidence fields in the verified output. Follow the [preflight procedure](../../docs/preflight.md) to choose and verify values, then retain `.local/verified-workload.tfvars.json` through teardown.
+
+Before the full deployer plan below, complete the [trusted first-create stage](../../docs/workload-permissions.md#required-trusted-bootstrap-and-demo-guide-change) under the [live-demo approval gates](../../docs/live-demo.md#4-read-only-pins-and-fresh-runtime-plan). In the same reconciled backend, a separate trusted administrator must review and, after Singapore cost/credit review and explicit approval, apply a saved Terraform plan targeted at `aws_kms_key.eks` and `aws_secretsmanager_secret.app`. Read both exact ARNs from state, replace every exact-ARN placeholder in the KMS, EKS and Secrets Manager/ECR drafts, then validate/simulate and attach the final policies. Switch back to the deployer for a fresh full plan; earlier full plans are stale. Repeat this stage with new ARNs on rebuild. From the repository root:
 
 ```bash
 WORKLOAD_VARS="$PWD/.local/verified-workload.tfvars.json"
+# On a fresh build or rebuild, complete trusted first-create and policy attachment first.
 terraform -chdir=terraform/workload plan -input=false -var-file="$WORKLOAD_VARS" -out=workload.tfplan
 terraform -chdir=terraform/workload show -no-color workload.tfplan
+# Apply only this reviewed saved plan after the cost/credit check and explicit approval.
 terraform -chdir=terraform/workload apply workload.tfplan
 ```
 
