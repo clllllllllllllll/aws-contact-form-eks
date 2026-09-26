@@ -1,0 +1,263 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CreateNamedSecurityGroups",
+      "Effect": "Allow",
+      "Action": "ec2:CreateSecurityGroup",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:security-group/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload"
+        },
+        "StringLike": {
+          "aws:RequestTag/Name": "contact-form-*"
+        }
+      }
+    },
+    {
+      "Sid": "UseOwnedVpcForSecurityGroups",
+      "Effect": "Allow",
+      "Action": "ec2:CreateSecurityGroup",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:vpc/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "ManageOwnedSecurityGroupsAndRules",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DeleteSecurityGroup",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:RevokeSecurityGroupEgress",
+        "ec2:ModifySecurityGroupRules"
+      ],
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:security-group/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "RulesOnEksManagedClusterGroup",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:ModifySecurityGroupRules"
+      ],
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:security-group/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/aws:eks:cluster-name": "contact-form-eks",
+          "aws:ResourceTag/kubernetes.io/cluster/contact-form-eks": "owned"
+        }
+      }
+    },
+    {
+      "Sid": "CreateTaggedSecurityGroupRules",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress"
+      ],
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:security-group-rule/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "CreateTaggedNodeLaunchTemplate",
+      "Effect": "Allow",
+      "Action": "ec2:CreateLaunchTemplate",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:launch-template/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "MaintainNodeLaunchTemplate",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:CreateLaunchTemplateVersion",
+        "ec2:DeleteLaunchTemplateVersions",
+        "ec2:ModifyLaunchTemplate",
+        "ec2:DeleteLaunchTemplate"
+      ],
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:launch-template/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "LaunchNamedPrivateRelay",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload",
+          "aws:RequestTag/Name": "contact-form-ssm-relay",
+          "ec2:InstanceType": "t3.micro",
+          "ec2:InstanceProfile": "arn:aws:iam::203888389134:instance-profile/contact-form-ssm-relay",
+          "ec2:MetadataHttpTokens": "required"
+        }
+      }
+    },
+    {
+      "Sid": "UseAmazonAmiForRelay",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:ap-southeast-1::image/ami-*",
+      "Condition": {
+        "StringEquals": {
+          "ec2:Owner": "amazon"
+        }
+      }
+    },
+    {
+      "Sid": "UseOwnedRelaySubnetAndGroup",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": [
+        "arn:aws:ec2:ap-southeast-1:203888389134:subnet/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:security-group/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "CreatePrivateRelayInterface",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:network-interface/*",
+      "Condition": {
+        "BoolIfExists": {
+          "ec2:AssociatePublicIpAddress": "false"
+        }
+      }
+    },
+    {
+      "Sid": "CreateEncryptedRelayRootVolume",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:volume/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/Lifecycle": "workload",
+          "ec2:VolumeType": "gp3"
+        },
+        "Bool": {
+          "ec2:Encrypted": "true"
+        }
+      }
+    },
+    {
+      "Sid": "TerminateOwnedRelay",
+      "Effect": "Allow",
+      "Action": "ec2:TerminateInstances",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload",
+          "aws:ResourceTag/Name": "contact-form-ssm-relay"
+        }
+      }
+    },
+    {
+      "Sid": "TagComputeAtCreation",
+      "Effect": "Allow",
+      "Action": "ec2:CreateTags",
+      "Resource": [
+        "arn:aws:ec2:ap-southeast-1:203888389134:security-group/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:security-group-rule/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:launch-template/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:instance/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:volume/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload",
+          "ec2:CreateAction": [
+            "CreateSecurityGroup",
+            "AuthorizeSecurityGroupIngress",
+            "AuthorizeSecurityGroupEgress",
+            "CreateLaunchTemplate",
+            "RunInstances"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "MaintainOwnedComputeAndRules",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:CreateTags",
+        "ec2:DeleteTags",
+        "ec2:ModifySecurityGroupRules"
+      ],
+      "Resource": [
+        "arn:aws:ec2:ap-southeast-1:203888389134:security-group/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:security-group-rule/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:launch-template/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:instance/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "MaintainRelayAndWorkerRootTags",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:CreateTags",
+        "ec2:DeleteTags"
+      ],
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:volume/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload",
+          "aws:ResourceTag/Name": [
+            "contact-form-ssm-relay-root",
+            "contact-form-eks-worker-root"
+          ]
+        }
+      }
+    }
+  ]
+}

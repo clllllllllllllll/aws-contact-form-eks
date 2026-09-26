@@ -1,0 +1,219 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CreatePrivateNamedCluster",
+      "Effect": "Allow",
+      "Action": "eks:CreateCluster",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload",
+          "aws:RequestedRegion": "ap-southeast-1",
+          "eks:authenticationMode": "API"
+        },
+        "Bool": {
+          "eks:endpointPrivateAccess": "true",
+          "eks:endpointPublicAccess": "false",
+          "eks:bootstrapClusterCreatorAdminPermissions": "false",
+          "eks:bootstrapSelfManagedAddons": "false"
+        },
+        "ForAllValues:ArnEquals": {
+          "eks:encryptionConfigProviderKeyArns": "arn:aws:kms:ap-southeast-1:203888389134:key/00000000-0000-0000-0000-000000000000"
+        },
+        "Null": {
+          "eks:encryptionConfigProviderKeyArns": "false"
+        }
+      }
+    },
+    {
+      "Sid": "ManageNamedCluster",
+      "Effect": "Allow",
+      "Action": [
+        "eks:DescribeCluster",
+        "eks:UpdateClusterConfig",
+        "eks:UpdateClusterVersion",
+        "eks:DeleteCluster",
+        "eks:ListAccessEntries",
+        "eks:ListAddons",
+        "eks:ListNodegroups",
+        "eks:ListUpdates",
+        "eks:DescribeUpdate"
+      ],
+      "Resource": "arn:aws:eks:ap-southeast-1:203888389134:cluster/contact-form-eks",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload"
+        },
+        "BoolIfExists": {
+          "eks:endpointPrivateAccess": "true",
+          "eks:endpointPublicAccess": "false"
+        },
+        "StringEqualsIfExists": {
+          "eks:authenticationMode": "API"
+        }
+      }
+    },
+    {
+      "Sid": "CreateTaggedClusterChildren",
+      "Effect": "Allow",
+      "Action": [
+        "eks:CreateAddon",
+        "eks:CreateNodegroup"
+      ],
+      "Resource": "arn:aws:eks:ap-southeast-1:203888389134:cluster/contact-form-eks",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload",
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "CreateOnlyDeployerAccessEntry",
+      "Effect": "Allow",
+      "Action": "eks:CreateAccessEntry",
+      "Resource": "arn:aws:eks:ap-southeast-1:203888389134:cluster/contact-form-eks",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload",
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload",
+          "eks:principalArn": "arn:aws:iam::203888389134:user/contact-form-deployer",
+          "eks:accessEntryType": "STANDARD"
+        }
+      }
+    },
+    {
+      "Sid": "ManageDeployerAccessEntry",
+      "Effect": "Allow",
+      "Action": [
+        "eks:DescribeAccessEntry",
+        "eks:DeleteAccessEntry",
+        "eks:ListAssociatedAccessPolicies"
+      ],
+      "Resource": "arn:aws:eks:ap-southeast-1:203888389134:access-entry/contact-form-eks/*/203888389134/contact-form-deployer/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload",
+          "eks:principalArn": "arn:aws:iam::203888389134:user/contact-form-deployer"
+        }
+      }
+    },
+    {
+      "Sid": "AssociateOnlyClusterAdmin",
+      "Effect": "Allow",
+      "Action": [
+        "eks:AssociateAccessPolicy",
+        "eks:DisassociateAccessPolicy"
+      ],
+      "Resource": "arn:aws:eks:ap-southeast-1:203888389134:access-entry/contact-form-eks/*/203888389134/contact-form-deployer/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload",
+          "eks:principalArn": "arn:aws:iam::203888389134:user/contact-form-deployer",
+          "eks:policyArn": "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+        }
+      }
+    },
+    {
+      "Sid": "ManageThreeNamedAddons",
+      "Effect": "Allow",
+      "Action": [
+        "eks:DescribeAddon",
+        "eks:UpdateAddon",
+        "eks:DeleteAddon",
+        "eks:ListUpdates",
+        "eks:DescribeUpdate"
+      ],
+      "Resource": [
+        "arn:aws:eks:ap-southeast-1:203888389134:addon/contact-form-eks/vpc-cni/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:addon/contact-form-eks/kube-proxy/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:addon/contact-form-eks/coredns/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "ManageTwoNamedNodegroups",
+      "Effect": "Allow",
+      "Action": [
+        "eks:DescribeNodegroup",
+        "eks:UpdateNodegroupConfig",
+        "eks:UpdateNodegroupVersion",
+        "eks:DeleteNodegroup",
+        "eks:ListUpdates",
+        "eks:DescribeUpdate"
+      ],
+      "Resource": [
+        "arn:aws:eks:ap-southeast-1:203888389134:nodegroup/contact-form-eks/contact-form-eks-0/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:nodegroup/contact-form-eks/contact-form-eks-1/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "TagOnlyNamedResourcesOnCreate",
+      "Effect": "Allow",
+      "Action": "eks:TagResource",
+      "Resource": [
+        "arn:aws:eks:ap-southeast-1:203888389134:cluster/contact-form-eks",
+        "arn:aws:eks:ap-southeast-1:203888389134:access-entry/contact-form-eks/*/203888389134/contact-form-deployer/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:addon/contact-form-eks/vpc-cni/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:addon/contact-form-eks/kube-proxy/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:addon/contact-form-eks/coredns/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:nodegroup/contact-form-eks/contact-form-eks-0/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:nodegroup/contact-form-eks/contact-form-eks-1/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "MaintainOwnedResourceTags",
+      "Effect": "Allow",
+      "Action": [
+        "eks:TagResource",
+        "eks:UntagResource",
+        "eks:ListTagsForResource"
+      ],
+      "Resource": [
+        "arn:aws:eks:ap-southeast-1:203888389134:cluster/contact-form-eks",
+        "arn:aws:eks:ap-southeast-1:203888389134:access-entry/contact-form-eks/*/203888389134/contact-form-deployer/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:addon/contact-form-eks/vpc-cni/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:addon/contact-form-eks/kube-proxy/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:addon/contact-form-eks/coredns/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:nodegroup/contact-form-eks/contact-form-eks-0/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:nodegroup/contact-form-eks/contact-form-eks-1/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    }
+  ]
+}

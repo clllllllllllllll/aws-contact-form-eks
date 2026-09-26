@@ -1,0 +1,112 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadOwnedKey",
+      "Effect": "Allow",
+      "Action": [
+        "kms:DescribeKey",
+        "kms:GetKeyPolicy",
+        "kms:GetKeyRotationStatus",
+        "kms:ListResourceTags",
+        "kms:ListGrants"
+      ],
+      "Resource": "arn:aws:kms:ap-southeast-1:203888389134:key/00000000-0000-0000-0000-000000000000",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/ManagedBy": "Terraform",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "RotateOwnedKey",
+      "Effect": "Allow",
+      "Action": [
+        "kms:EnableKeyRotation",
+        "kms:DisableKeyRotation"
+      ],
+      "Resource": "arn:aws:kms:ap-southeast-1:203888389134:key/00000000-0000-0000-0000-000000000000",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/ManagedBy": "Terraform",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "GrantEksEncryptionOnOwnedKey",
+      "Effect": "Allow",
+      "Action": "kms:CreateGrant",
+      "Resource": "arn:aws:kms:ap-southeast-1:203888389134:key/00000000-0000-0000-0000-000000000000",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/ManagedBy": "Terraform",
+          "aws:ResourceTag/Lifecycle": "workload"
+        },
+        "ForAllValues:StringEquals": {
+          "kms:GrantOperations": [
+            "Encrypt",
+            "Decrypt",
+            "GenerateDataKey",
+            "GenerateDataKeyWithoutPlaintext",
+            "ReEncryptFrom",
+            "ReEncryptTo",
+            "DescribeKey"
+          ]
+        },
+        "Null": {
+          "kms:GrantOperations": "false"
+        }
+      }
+    },
+    {
+      "Sid": "RevokeOwnedKeyGrants",
+      "Effect": "Allow",
+      "Action": "kms:RevokeGrant",
+      "Resource": "arn:aws:kms:ap-southeast-1:203888389134:key/00000000-0000-0000-0000-000000000000",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/ManagedBy": "Terraform",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "ScheduleSevenDayDeletion",
+      "Effect": "Allow",
+      "Action": "kms:ScheduleKeyDeletion",
+      "Resource": "arn:aws:kms:ap-southeast-1:203888389134:key/00000000-0000-0000-0000-000000000000",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/ManagedBy": "Terraform",
+          "aws:ResourceTag/Lifecycle": "workload"
+        },
+        "NumericEquals": {
+          "kms:ScheduleKeyDeletionPendingWindowInDays": 7
+        }
+      }
+    },
+    {
+      "Sid": "MaintainOwnedKeyTags",
+      "Effect": "Allow",
+      "Action": [
+        "kms:TagResource",
+        "kms:UntagResource"
+      ],
+      "Resource": "arn:aws:kms:ap-southeast-1:203888389134:key/00000000-0000-0000-0000-000000000000",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/ManagedBy": "Terraform",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    }
+  ]
+}

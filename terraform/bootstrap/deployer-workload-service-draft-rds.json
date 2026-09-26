@@ -1,0 +1,159 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CreateNamedDatabaseSubnetGroup",
+      "Effect": "Allow",
+      "Action": "rds:CreateDBSubnetGroup",
+      "Resource": "arn:aws:rds:ap-southeast-1:203888389134:subgrp:contact-form-db",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "CreatePrivateEncryptedMultiAzPostgres",
+      "Effect": "Allow",
+      "Action": "rds:CreateDBInstance",
+      "Resource": "arn:aws:rds:ap-southeast-1:203888389134:db:contact-form-postgres",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload",
+          "rds:DatabaseEngine": "postgres",
+          "rds:DatabaseClass": "db.t4g.small",
+          "rds:DatabaseName": "contactform"
+        },
+        "Bool": {
+          "rds:MultiAz": "true",
+          "rds:StorageEncrypted": "true",
+          "rds:PubliclyAccessible": "false",
+          "rds:ManageMasterUserPassword": "true"
+        }
+      }
+    },
+    {
+      "Sid": "UseOwnedSubnetGroupForDatabase",
+      "Effect": "Allow",
+      "Action": "rds:CreateDBInstance",
+      "Resource": "arn:aws:rds:ap-southeast-1:203888389134:subgrp:contact-form-db",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "TagNamedDatabaseAtCreation",
+      "Effect": "Allow",
+      "Action": "rds:AddTagsToResource",
+      "Resource": [
+        "arn:aws:rds:ap-southeast-1:203888389134:db:contact-form-postgres",
+        "arn:aws:rds:ap-southeast-1:203888389134:subgrp:contact-form-db"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "ManageNamedDatabase",
+      "Effect": "Allow",
+      "Action": [
+        "rds:DescribeDBInstances",
+        "rds:ModifyDBInstance",
+        "rds:DeleteDBInstance"
+      ],
+      "Resource": "arn:aws:rds:ap-southeast-1:203888389134:db:contact-form-postgres",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload"
+        },
+        "BoolIfExists": {
+          "rds:MultiAz": "true",
+          "rds:ManageMasterUserPassword": "true"
+        }
+      }
+    },
+    {
+      "Sid": "ManageNamedSubnetGroup",
+      "Effect": "Allow",
+      "Action": [
+        "rds:DescribeDBSubnetGroups",
+        "rds:ModifyDBSubnetGroup",
+        "rds:DeleteDBSubnetGroup"
+      ],
+      "Resource": "arn:aws:rds:ap-southeast-1:203888389134:subgrp:contact-form-db",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "MaintainDatabaseTags",
+      "Effect": "Allow",
+      "Action": [
+        "rds:ListTagsForResource",
+        "rds:AddTagsToResource",
+        "rds:RemoveTagsFromResource"
+      ],
+      "Resource": [
+        "arn:aws:rds:ap-southeast-1:203888389134:db:contact-form-postgres",
+        "arn:aws:rds:ap-southeast-1:203888389134:subgrp:contact-form-db"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "CreateRdsManagedMasterSecret",
+      "Effect": "Allow",
+      "Action": "secretsmanager:CreateSecret",
+      "Resource": "arn:aws:secretsmanager:ap-southeast-1:203888389134:secret:rds!db-*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-southeast-1"
+        },
+        "StringLike": {
+          "secretsmanager:Name": "rds!db-*"
+        }
+      }
+    },
+    {
+      "Sid": "TagRdsManagedMasterSecret",
+      "Effect": "Allow",
+      "Action": "secretsmanager:TagResource",
+      "Resource": "arn:aws:secretsmanager:ap-southeast-1:203888389134:secret:rds!db-*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-southeast-1"
+        }
+      }
+    },
+    {
+      "Sid": "DescribeSecretsManagerAwsKeyForRds",
+      "Effect": "Allow",
+      "Action": "kms:DescribeKey",
+      "Resource": "arn:aws:kms:ap-southeast-1:203888389134:key/*",
+      "Condition": {
+        "ForAnyValue:StringEquals": {
+          "kms:ResourceAliases": "alias/aws/secretsmanager"
+        }
+      }
+    }
+  ]
+}

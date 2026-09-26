@@ -1,0 +1,270 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CreateNamedVpc",
+      "Effect": "Allow",
+      "Action": "ec2:CreateVpc",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:vpc/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload",
+          "aws:RequestTag/Name": "contact-form-vpc"
+        }
+      }
+    },
+    {
+      "Sid": "CreateNamedInternetGateway",
+      "Effect": "Allow",
+      "Action": "ec2:CreateInternetGateway",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:internet-gateway/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/Lifecycle": "workload",
+          "aws:RequestTag/Name": "contact-form-igw"
+        }
+      }
+    },
+    {
+      "Sid": "CreateNamedSubnets",
+      "Effect": "Allow",
+      "Action": "ec2:CreateSubnet",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:subnet/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/Lifecycle": "workload"
+        },
+        "StringLike": {
+          "aws:RequestTag/Name": [
+            "contact-form-public-*",
+            "contact-form-app-*",
+            "contact-form-db-*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "CreateNamedRouteTables",
+      "Effect": "Allow",
+      "Action": "ec2:CreateRouteTable",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:route-table/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/Lifecycle": "workload"
+        },
+        "StringLike": {
+          "aws:RequestTag/Name": [
+            "contact-form-public",
+            "contact-form-app-*",
+            "contact-form-db-*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "AllocateNamedNatAddresses",
+      "Effect": "Allow",
+      "Action": "ec2:AllocateAddress",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:elastic-ip/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/Lifecycle": "workload"
+        },
+        "StringLike": {
+          "aws:RequestTag/Name": "contact-form-nat-*"
+        }
+      }
+    },
+    {
+      "Sid": "CreateNamedNatGateways",
+      "Effect": "Allow",
+      "Action": "ec2:CreateNatGateway",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:natgateway/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/Lifecycle": "workload"
+        },
+        "StringLike": {
+          "aws:RequestTag/Name": "contact-form-nat-*"
+        }
+      }
+    },
+    {
+      "Sid": "UseOwnedVpcForNetworkCreation",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:CreateSubnet",
+        "ec2:CreateRouteTable",
+        "ec2:CreateNatGateway"
+      ],
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:vpc/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "UseOwnedNatInputs",
+      "Effect": "Allow",
+      "Action": "ec2:CreateNatGateway",
+      "Resource": [
+        "arn:aws:ec2:ap-southeast-1:203888389134:elastic-ip/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:subnet/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "ManageOwnedNetwork",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:ModifyVpcAttribute",
+        "ec2:DeleteVpc",
+        "ec2:DeleteInternetGateway",
+        "ec2:ModifySubnetAttribute",
+        "ec2:DeleteSubnet",
+        "ec2:ReleaseAddress",
+        "ec2:DeleteNatGateway",
+        "ec2:DeleteRouteTable",
+        "ec2:CreateRoute",
+        "ec2:DeleteRoute",
+        "ec2:AssociateRouteTable",
+        "ec2:DisassociateRouteTable",
+        "ec2:AttachInternetGateway",
+        "ec2:DetachInternetGateway",
+        "ec2:ReplaceRouteTableAssociation"
+      ],
+      "Resource": [
+        "arn:aws:ec2:ap-southeast-1:203888389134:vpc/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:internet-gateway/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:subnet/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:route-table/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:elastic-ip/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:natgateway/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "TagNetworkOnlyAtCreation",
+      "Effect": "Allow",
+      "Action": "ec2:CreateTags",
+      "Resource": [
+        "arn:aws:ec2:ap-southeast-1:203888389134:vpc/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:internet-gateway/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:subnet/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:route-table/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:elastic-ip/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:natgateway/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload",
+          "ec2:CreateAction": [
+            "CreateVpc",
+            "CreateInternetGateway",
+            "CreateSubnet",
+            "CreateRouteTable",
+            "AllocateAddress",
+            "CreateNatGateway"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "MaintainOwnedNetworkTags",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:CreateTags",
+        "ec2:DeleteTags"
+      ],
+      "Resource": [
+        "arn:aws:ec2:ap-southeast-1:203888389134:vpc/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:internet-gateway/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:subnet/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:route-table/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:elastic-ip/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:natgateway/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "TerraformRegionalEc2Refresh",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeVpcs",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeInternetGateways",
+        "ec2:DescribeRouteTables",
+        "ec2:DescribeAddresses",
+        "ec2:DescribeNatGateways",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSecurityGroupRules",
+        "ec2:DescribeInstances",
+        "ec2:DescribeLaunchTemplates",
+        "ec2:DescribeLaunchTemplateVersions",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DescribeVolumes",
+        "ec2:DescribeAvailabilityZones",
+        "ec2:DescribeImages",
+        "ec2:DescribeInstanceTypes",
+        "ec2:DescribeTags",
+        "ec2:DescribeInstanceCreditSpecifications"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-southeast-1"
+        }
+      }
+    },
+    {
+      "Sid": "ReadOwnedVpcAttributes",
+      "Effect": "Allow",
+      "Action": "ec2:DescribeVpcAttribute",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:vpc/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    },
+    {
+      "Sid": "ReadRelayAttributes",
+      "Effect": "Allow",
+      "Action": "ec2:DescribeInstanceAttribute",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Name": "contact-form-ssm-relay"
+        }
+      }
+    }
+  ]
+}
