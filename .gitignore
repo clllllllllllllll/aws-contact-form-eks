@@ -28,3 +28,11 @@ __pycache__/
 
 # Generated workstation deployment context
 .local/
+
+# Local operator notes; publish only the diagram, security report and evidence PNGs
+/docs/*
+!/docs/architecture.png
+!/docs/security.md
+!/docs/evidence/
+/docs/evidence/*
+!/docs/evidence/*.png

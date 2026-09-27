@@ -20,7 +20,7 @@ The ALB-to-pod connection is HTTP inside the VPC. The worker security group has 
 
 ## Foundational controls
 
-The foundation has three required flags for certificate, security-service, and project-CloudTrail creation; none has a Terraform default. The initial [stage file](../terraform/foundation/stages/01-base.tfvars) explicitly sets all three to false, and later stage files set them only after the relevant ownership, delegation, and cost checks. Omitting a stage file with `plan -input=false` fails instead of silently selecting account-wide ownership. Before enabling Config, Security Hub Foundational Security Best Practices (FSBP), or a project CloudTrail, inventory existing services in Singapore and review [costs](cost.md). The intended FSBP subscription is version 1.0.0; this is not a claim of CIS certification. If account-wide services already exist, reuse them instead of creating a duplicate recorder or trail.
+The foundation has three required flags for certificate, security-service, and project-CloudTrail creation; none has a Terraform default. The initial [stage file](../terraform/foundation/stages/01-base.tfvars) explicitly sets all three to false, and later stage files set them only after the relevant ownership, delegation, and cost checks. Omitting a stage file with `plan -input=false` fails instead of silently selecting account-wide ownership. Before enabling Config, Security Hub Foundational Security Best Practices (FSBP), or a project CloudTrail, inventory existing services in Singapore and review the [cost gate](../README.md#prerequisites-and-cost-gate). The intended FSBP subscription is version 1.0.0; this is not a claim of CIS certification. If account-wide services already exist, reuse them instead of creating a duplicate recorder or trail.
 
 Relevant FSBP checks include private RDS access (RDS.2), encryption at rest (RDS.3), Multi-AZ (RDS.5), deletion protection (RDS.8), published logs (RDS.9/RDS.36), backups (RDS.11), and PostgreSQL transport encryption (RDS.38). [AWS control definitions](https://docs.aws.amazon.com/securityhub/latest/userguide/rds-controls.html). The draft exports PostgreSQL and upgrade logs to CloudWatch. These controls can report `NO_DATA` or pending results until evaluation; neither means pass.
 
@@ -66,6 +66,10 @@ The `service-logs/` lifecycle rule expires current versions after 30 days and no
 
 Do not replace the pending row with guessed results. Findings elsewhere in the account must be attributed to their actual resources and owners, rather than claimed as project results.
 
+## Evidence screenshots
+
+Add dated, redacted screenshots from the live deployment under `docs/evidence/` and embed them here after verifying the matching AWS account, Region and resource. Useful views include the private EKS endpoint and worker placement, private encrypted Multi-AZ RDS settings, HTTPS ALB listener and healthy targets, and actual Security Hub FSBP findings. No screenshots have been captured yet. Hide secret values, personal data and unrelated account resources before committing images.
+
 ## Known design exceptions to confirm live
 
 | Control or practice | Reason and scope | Follow-up |
@@ -77,4 +81,4 @@ Do not replace the pending row with guessed results. Findings elsewhere in the a
 | Privileged database readback Job | Short-lived Job uses the setup role to show one synthetic row in the live demo; Flask remains INSERT-only | Use a dedicated read-only SQL identity for long-lived operational querying. |
 | Availability of management relay | One private relay in one AZ; failure interrupts management, not serving | Add a second relay or managed access solution if required. |
 
-All exceptions are limited to this short-lived assignment and need to be compared with actual Security Hub findings. The read-only teardown inventory reports owned EBS volumes/snapshots, retained RDS backups, and workload KMS keys. Keys in `PendingDeletion` are shown as expected pending cleanup; other key states remain actionable. A denied read is inconclusive; exit 0 covers only the names and tags the checker declares. Worker and relay root-volume tags are now specified locally but need live verification. See [final cleanup](final-cleanup.md) for retained foundation and cost decisions.
+All exceptions are limited to this short-lived assignment and need to be compared with actual Security Hub findings. The read-only teardown inventory reports owned EBS volumes/snapshots, retained RDS backups, and workload KMS keys. Keys in `PendingDeletion` are shown as expected pending cleanup; other key states remain actionable. A denied read is inconclusive; exit 0 covers only the names and tags the checker declares. Worker and relay root-volume tags are now specified locally but need live verification. See [final cleanup](../README.md#final-cleanup-of-retained-resources) for retained foundation and cost decisions.

@@ -28,12 +28,11 @@ Present now:
 | `README.md` | Design, intended deployment sequence, and verification checklist |
 | `ASSIGNMENT_PLAN.md` | Implementation decisions and task tracking |
 | `docs/architecture.png` | High-level architecture diagram |
-| `docs/security.md` | Planned controls, evidence commands, actual-findings register, and demo exceptions |
-| `docs/cost.md` | Singapore cost estimate, approval gate, and post-destroy charges |
-| `docs/live-demo.md` | Chronological local demo and laptop rehearsal commands, including teardown and fresh rebuild |
+| `docs/security.md` | Planned controls, evidence commands, actual-findings register, and demo exceptions; dated screenshots will be added after live checks |
 | `app/` | Flask form, SQL schema, Docker image, local Makefile, and integration tests; verified locally |
 | `terraform/bootstrap/`, `terraform/foundation/`, `terraform/workload/` | Applied state-bucket bootstrap; foundation and workload are locally validated drafts; neither is applied |
-| `ansible/` | Draft deploy/cleanup playbooks, manifests and runbook; locally syntax checked |
+| `terraform/README.md`, `ansible/README.md` | Terraform backend/stage instructions and Kubernetes deployment/cleanup commands |
+| `ansible/` | Draft deploy/cleanup playbooks and manifests; locally syntax checked |
 | `scripts/` | Draft tunnel, image publishing and ALB/DNS helpers |
 | `.gitignore` | Excludes local secrets, state, plans, and generated files |
 
@@ -59,8 +58,9 @@ session-manager-plugin --version
 
 For a fresh Python environment, install the pinned workstation packages and Ansible collection:
 
-    python3 -m venv /home/limch/.venvs/assignment
-    source /home/limch/.venvs/assignment/bin/activate
+    mkdir -p "$HOME/.venvs"
+    python3 -m venv "$HOME/.venvs/assignment"
+    source "$HOME/.venvs/assignment/bin/activate"
     python -m pip install --no-cache-dir -r requirements-workstation.txt
     ansible-galaxy collection install -r ansible/requirements.yml
 
@@ -68,7 +68,7 @@ The Botocore CRT extra is required for this workstation's AWS login method. The 
 
 Check that the AWS identity is not root, the account ID is correct, Docker can reach its daemon, and the SSM plugin starts. `aws configure list` shows where credentials and the default Region come from; do not paste access keys into the repository.
 
-**Before every paid foundation or workload apply, including each of the two first-create targets and a rebuild, update the Singapore estimate, check credit balance, eligibility and expiry, review the exact saved plan and teardown schedule, and obtain explicit user approval.** The cluster target may create VPC/NAT/roles and starts paid EKS time. The state bucket was approved separately; with small state files and ordinary runs, its expected cost is well under US$1 for the assignment week, not a fixed fee or cap. Price the EKS cluster, two EC2 workers, two NAT gateways and data processing, the SSM relay, Multi-AZ RDS, ALB, Secrets Manager, ECR, Config/Security Hub, logs, DNS, public IPv4 addresses, and storage that remains after teardown. Check the account's credits, their expiry, and budget alerts. A US$10 monthly budget with a US$5 actual-cost email alert has been configured; it is not a hard spending cap. The current [Singapore planning estimate](docs/cost.md) is about US$5 in baseline charges for ten hours, with a US$10–20 allowance for variable charges before credits. It is neither a cap nor an AWS quote; regional rates, credit eligibility, and expiry still need verification. Domain registration is a separate cost.
+**Before every paid foundation or workload apply, including each of the two first-create targets and a rebuild, update the Singapore estimate, check credit balance, eligibility and expiry, review the exact saved plan and teardown schedule, and obtain explicit user approval.** The cluster target may create VPC/NAT/roles and starts paid EKS time. The state bucket was approved separately; with small state files and ordinary runs, its expected cost is well under US$1 for the assignment week, not a fixed fee or cap. Price the EKS cluster, two EC2 workers, two NAT gateways and data processing, the SSM relay, Multi-AZ RDS, ALB, Secrets Manager, ECR, Config/Security Hub, logs, DNS, public IPv4 addresses, and storage that remains after teardown. Check the account's credits, their expiry, and budget alerts. A US$10 monthly budget with a US$5 actual-cost email alert has been configured; it is not a hard spending cap. The Singapore planning allowance is about US$10–20 for the whole under-ten-hour activity before credits; it is neither a cap nor an AWS quote. Regional rates, credit eligibility, and expiry still need verification. Domain registration is a separate cost. Provisioning and deletion count toward runtime, and the retained foundation can continue to incur charges after workload destroy.
 
 Never commit AWS credentials, Terraform state or plan files, kubeconfig, private keys, database passwords, or real contact-form submissions.
 
@@ -94,14 +94,14 @@ Bootstrap state stays local at `terraform/bootstrap/terraform.tfstate` and is ex
 
 ## Deployment runbook
 
-Use the [local live-demo and rehearsal runbook](docs/live-demo.md) for the exact workstation sequence and review points. It separates the retained foundation from the disposable workload and records the current live-verification gaps.
+Run the commands below from the local WSL workstation. Keep the same Git revision and verified workload version file for a laptop rehearsal. The [Terraform instructions](terraform/README.md), [Ansible instructions](ansible/README.md), and [security evidence register](docs/security.md) give the stage-specific checks.
 
 This is the target order for the local-workstation deployment. Bootstrap is applied and verified; foundation Terraform is a locally validated draft; workload is a locally validated draft and Ansible is drafted but not deployed. Complete and test each remaining stage before using its apply or deployment commands. Review the actual plan and cost before each apply.
 
 1. **Build and test the app locally.** Start a local PostgreSQL instance, run the Flask tests, submit a test form, and query the saved row. Build the container and confirm it runs as a non-root user. Local development may use a separate local database credential; production credentials come from Secrets Manager.
 2. **Bootstrap remote Terraform state (done for this account).** The encrypted, versioned S3 bucket is ready for foundation/workload state and S3 lockfiles. Preserve the local bootstrap state securely. Do not put secrets in Terraform inputs or outputs.
 3. **Apply the persistent foundation.** Use `terraform/foundation/` for DNS, retained logs/evidence, and other resources intended to survive a demo teardown. `terraform/bootstrap/` owns the state bucket; foundation stores its own state there. Inspect existing account-wide security services before trying to manage them.
-4. **Bootstrap in two targets, then apply the runtime infrastructure.** A trusted administrator creates only `aws_kms_key.eks` and `aws_secretsmanager_secret.app` through a reviewed saved target plan, then binds their exact ARNs into scoped policies. With all four OIDC grants still inert at `id/BOOTSTRAP-PLACEHOLDER`, the deployer reviews a separate saved `-target=aws_eks_cluster.main` plan using the same verified variables. Inspect its VPC/NAT/role dependencies, update cost/credits and approve it separately; EKS billing starts on creation. Read the new issuer with `aws eks describe-cluster`; an administrator makes an ignored mode-600 `.local/deployer-iam-provisioning.json` from the tracked inert template, binds all four OIDC grants in that copy, validates/simulates and publishes/attaches only the copy. **Only then** does the deployer make a fresh full workload plan for the remaining workers, relay, RDS Multi-AZ instance, ECR, IAM roles, and security groups. Follow the [required sequence](docs/workload-permissions.md#required-trusted-bootstrap-and-demo-guide-change) and confirm outputs contain identifiers and endpoints, not secret values.
+4. **Bootstrap in two targets, then apply the runtime infrastructure.** A trusted administrator creates only `aws_kms_key.eks` and `aws_secretsmanager_secret.app` through a reviewed saved target plan, then binds their exact ARNs into scoped policies. With all four OIDC grants still inert at `id/BOOTSTRAP-PLACEHOLDER`, the deployer reviews a separate saved `-target=aws_eks_cluster.main` plan using the same verified variables. Inspect its VPC/NAT/role dependencies, update cost/credits and approve it separately; EKS billing starts on creation. Read the new issuer with `aws eks describe-cluster`; an administrator makes an ignored mode-600 `.local/deployer-iam-provisioning.json` from the tracked inert template, binds all four OIDC grants in that copy, validates/simulates and publishes/attaches only the copy. **Only then** does the deployer make a fresh full workload plan for the remaining workers, relay, RDS Multi-AZ instance, ECR, IAM roles, and security groups. Follow the [Terraform first-create procedure](terraform/README.md) and confirm outputs contain identifiers and endpoints, not secret values.
 5. **Open the management tunnel.** Start an SSM port-forwarding session from the workstation through the private relay to the private EKS API. Use the tunnel-aware kubeconfig with TLS hostname verification intact. The drafted scripts/open_tunnel.py writes a TLS-verifying kubeconfig and forwards local port 8443. Verify `kubectl get nodes` before running Ansible.
 6. **Run Ansible locally.** The drafted `ansible/deploy.yml` builds and pushes an immutable image to private ECR, installs the pinned AWS Load Balancer Controller, and applies the namespace, service accounts, RBAC, database setup Job, Deployment, ClusterIP Service, and HTTPS Ingress. The setup Job creates the restricted app user and table on a fresh database; reruns reuse a completed Job or safely recreate a failed one while the setup script preserves credentials and rows. Ansible then waits for healthy ALB targets and creates the Route 53 alias.
 7. **Verify the site and security controls.** Submit synthetic data through HTTPS, query its row from a controlled client inside the VPC, and record the evidence listed below. Run Ansible again and check that it makes no unwanted changes.
@@ -123,14 +123,66 @@ After reviewing that saved plan and obtaining explicit approval for this paid ap
 terraform -chdir=terraform/foundation apply foundation.tfplan
 ```
 
-After inventory and ownership review, choose either `stages/02-security-existing-trail.tfvars` or `stages/02-security-project-trail.tfvars` only if stage 02 is still needed. Once registrar delegation is verified, use the matching `stages/03-ready-*.tfvars` file only if the certificate stage is still needed. Keep the latest selected stage for later foundation plans. After stage 03 is complete, run the [read-only preflight](docs/preflight.md) to save `.local/verified-workload.tfvars.json`. Initialize the reconciled workload backend:
+After stage 01, check the Route 53 nameservers and set them at the domain registrar. Inspect any existing account-wide services before choosing the stage 02 trail branch:
+
+```bash
+terraform -chdir=terraform/foundation output -json name_servers
+aws configservice describe-configuration-recorders --region ap-southeast-1
+aws cloudtrail describe-trails --region ap-southeast-1
+aws securityhub describe-hub --region ap-southeast-1
+```
+
+`describe-hub` may report that Security Hub is disabled; record the result. Choose `existing-trail` only if a suitable management-event trail already exists. Otherwise review the project-trail cost and ownership. For an **unapplied** stage 02, plan with the selected file, inspect it, update the cost review and get approval before applying the saved plan:
+
+```bash
+TRAIL_MODE=existing-trail  # or project-trail, after inspecting the account
+FOUNDATION_STAGE="stages/02-security-${TRAIL_MODE}.tfvars"
+terraform -chdir=terraform/foundation plan -input=false -var-file="$FOUNDATION_STAGE" -out=foundation.tfplan
+terraform -chdir=terraform/foundation show -no-color foundation.tfplan
+```
+
+After reviewing this exact stage 02 plan and receiving explicit cost approval:
+
+```bash
+terraform -chdir=terraform/foundation apply foundation.tfplan
+```
+
+Check public `cheelong.xyz` NS delegation against all Route 53 nameservers, ignoring case and trailing dots. An AWS hosted-zone output alone does not prove registrar delegation. Once the public records match, use the **same trail branch** for an unapplied certificate stage. Review and approve its saved plan separately:
+
+```bash
+curl --fail --silent --show-error 'https://dns.google/resolve?name=cheelong.xyz&type=NS' | python3 -m json.tool
+FOUNDATION_STAGE="stages/03-ready-${TRAIL_MODE}.tfvars"
+terraform -chdir=terraform/foundation plan -input=false -var-file="$FOUNDATION_STAGE" -out=foundation.tfplan
+terraform -chdir=terraform/foundation show -no-color foundation.tfplan
+```
+
+After reviewing this exact stage 03 plan and receiving explicit cost approval:
+
+```bash
+terraform -chdir=terraform/foundation apply foundation.tfplan
+CERT_ARN="$(terraform -chdir=terraform/foundation output -raw certificate_arn)"
+aws acm describe-certificate --region ap-southeast-1 --certificate-arn "$CERT_ARN" --query 'Certificate.{domain:DomainName,status:Status,validation:DomainValidationOptions[*].ValidationStatus}'
+```
+
+The certificate must report `ISSUED`. On a workstation with an already applied foundation, skip completed stages and retain the **latest applied** stage file; an earlier file can plan to disable later features. Before workload creation, use the [read-only preflight](terraform/workload/README.md) to choose currently compatible versions and check quota. On a first run, make a local candidate from the example, replace its invalid placeholders with verified Singapore versions and AMIs, then run:
+
+```bash
+mkdir -p .local
+chmod 700 .local
+cp terraform/workload/version-inputs.tfvars.json.example .local/workload-candidate.tfvars.json
+chmod 600 .local/workload-candidate.tfvars.json
+# Edit .local/workload-candidate.tfvars.json with actual supported versions and AMIs.
+python3 scripts/preflight.py --profile contact-form-deployer --versions-file .local/workload-candidate.tfvars.json
+```
+
+Only `READY` creates an ignored mode-600 `.local/verified-workload.tfvars.json`; `BLOCKED` or `INCOMPLETE` stops deployment. The fresh stack needs 6 free Standard On-Demand EC2 vCPUs for two workers and the relay. Preflight also reports 14-vCPU simultaneous managed-node update headroom separately. Keep the verified file through destroy and securely carry it to the rehearsal workstation. After inspecting local and remote state, initialize the reconciled workload backend:
 
 ```bash
 terraform -chdir=terraform/workload init
 WORKLOAD_VARS="$PWD/.local/verified-workload.tfvars.json"
 ```
 
-Before a full workload plan, follow [both required target stages](docs/workload-permissions.md#required-trusted-bootstrap-and-demo-guide-change): after separate updated Singapore cost reviews and approvals, a trusted administrator creates the key and app-secret metadata and rebinds their exact ARNs, then the deployer applies the reviewed saved `aws_eks_cluster.main` target with OIDC grants still inert. Read the issuer through `aws eks describe-cluster`; the administrator makes the ignored mode-600 OIDC review copy from the inert template, binds the new exact ARN in all four statements there, and validates/simulates/publishes/attaches that copy. The full plan must be generated **after** these stages; the key, app secret and cluster already exist in workload state:
+Before a full workload plan, follow [both required target stages](terraform/README.md): after separate updated Singapore cost reviews and approvals, a trusted administrator creates the key and app-secret metadata and rebinds their exact ARNs, then the deployer applies the reviewed saved `aws_eks_cluster.main` target with OIDC grants still inert. Read the issuer through `aws eks describe-cluster`; the administrator makes the ignored mode-600 OIDC review copy from the inert template, binds the new exact ARN in all four statements there, and validates/simulates/publishes/attaches that copy. The full plan must be generated **after** these stages; the key, app secret and cluster already exist in workload state:
 
 ```bash
 terraform -chdir=terraform/workload plan -input=false -var-file="$WORKLOAD_VARS" -out=workload.tfplan
@@ -156,14 +208,14 @@ The Ansible runbook gives the two-terminal tunnel/deploy sequence. These command
 In terminal 1, activate the assignment virtualenv and open the SSM tunnel:
 
     cd /home/limch/projects/aws-contact-form-eks
-    source /home/limch/.venvs/assignment/bin/activate
+    source "$HOME/.venvs/assignment/bin/activate"
     export AWS_PROFILE=contact-form-deployer
     python3 scripts/open_tunnel.py
 
 In terminal 2, use the generated kubeconfig and run Ansible:
 
     cd /home/limch/projects/aws-contact-form-eks
-    source /home/limch/.venvs/assignment/bin/activate
+    source "$HOME/.venvs/assignment/bin/activate"
     export AWS_PROFILE=contact-form-deployer
     export KUBECONFIG="$PWD/.local/kubeconfig"
     kubectl get nodes -L topology.kubernetes.io/zone
@@ -225,10 +277,14 @@ The runtime environment is disposable. **Destroying RDS deletes the contact-form
 1. Stop submissions. Remove the Route 53 app alias and Kubernetes Ingress through the Ansible cleanup workflow.
 2. Wait until the AWS Load Balancer Controller has deleted the ALB and target groups. Do not destroy EKS or the VPC first.
 3. Remove the remaining Kubernetes resources, close the SSM tunnel, and destroy `terraform/workload/`. From the repository root, set `WORKLOAD_VARS="$PWD/.local/verified-workload.tfvars.json"`, then run `terraform -chdir=terraform/workload plan -destroy -input=false -var-file="$WORKLOAD_VARS" -out=workload-destroy.tfplan`. Review with `terraform -chdir=terraform/workload show -no-color workload-destroy.tfplan`; only then run `terraform -chdir=terraform/workload apply workload-destroy.tfplan`. The saved plan carries the verified version inputs.
-4. Run `python3 scripts/check_residual.py --profile contact-form-deployer` after destroy. Exit 0 means no actionable remnants within its declared Singapore names and tags; a workload KMS key in `PendingDeletion` is reported separately in `expected_pending_cleanup`. Exit 2 means actionable remnants remain; exit 1 means a read failed and cleanup is unproven. Other accounts/Regions and resources outside those names and tags, including some untagged or manual assets, are outside the check; exit 0 is not a zero-bill claim. Review retained foundation charges separately; see [final cleanup scope](docs/final-cleanup.md).
-5. Recheck the paid-apply gate before **each target and full rebuild apply**; repeat [both target stages and exact KMS/secret/OIDC ARN rebinding](docs/workload-permissions.md#required-trusted-bootstrap-and-demo-guide-change) for the new IDs. Regenerate the ignored OIDC review copy from the inert template; never reuse the old issuer. Generate a fresh full plan from the post-cluster state, apply only after review and approval, republish the image, and rerun Ansible. Confirm the old demo row is absent and a new submission works.
+4. Run `python3 scripts/check_residual.py --profile contact-form-deployer` after destroy. Exit 0 means no actionable remnants within its declared Singapore names and tags; a workload KMS key in `PendingDeletion` is reported separately in `expected_pending_cleanup`. Exit 2 means actionable remnants remain; exit 1 means a read failed and cleanup is unproven. Other accounts/Regions and resources outside those names and tags, including some untagged or manual assets, are outside the check; exit 0 is not a zero-bill claim. Review retained foundation charges separately under [final cleanup](#final-cleanup-of-retained-resources).
+5. Recheck the paid-apply gate before **each target and full rebuild apply**; repeat [both target stages and exact KMS/secret/OIDC ARN rebinding](terraform/README.md) for the new IDs. Regenerate the ignored OIDC review copy from the inert template; never reuse the old issuer. Generate a fresh full plan from the post-cluster state, apply only after review and approval, republish the image, and rerun Ansible. Confirm the old demo row is absent and a new submission works.
 
-Persistent foundation services can still cost money after runtime teardown. The residual-cost check is drafted but has not been run against AWS. It must be rehearsed before the demo. [Cost and teardown gate](docs/cost.md) and [security evidence](docs/security.md) cover remaining charges and findings.
+Persistent foundation services can still cost money after runtime teardown. The residual-cost check is drafted but has not been run against AWS. It must be rehearsed before the demo. The [security evidence](docs/security.md) page records actual findings.
+
+## Final cleanup of retained resources
+
+Workload destroy does not remove the state bucket or foundation. Before deciding on final removal, inspect the reviewed foundation plan and actual account ownership. The Route 53 zone and ACM certificate support `cheelong.xyz`; do not remove DNS that the owner still needs. The evidence bucket and seven-day EKS/RDS log groups can retain data and incur charges after the workload is gone. Config, Security Hub and CloudTrail may be account-wide or pre-existing; preserve unrelated controls. The versioned state bucket can retain old state versions and lockfiles, and its local bootstrap state must be preserved securely. Review retained RDS backups and snapshots, EBS volumes and snapshots, NAT gateways/EIPs, ECR images, secrets and the workload KMS key separately; the scoped residual checker cannot prove a zero bill. Final foundation/backend teardown needs its own ownership decision, saved plan, cost review and approval.
 
 ## Reference documentation
 
