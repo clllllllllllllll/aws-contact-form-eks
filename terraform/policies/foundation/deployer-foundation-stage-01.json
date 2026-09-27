@@ -132,6 +132,7 @@
       "Effect": "Allow",
       "Action": [
         "logs:CreateLogGroup",
+        "logs:TagLogGroup",
         "logs:PutRetentionPolicy"
       ],
       "Resource": [

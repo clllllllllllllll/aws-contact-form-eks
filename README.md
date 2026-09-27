@@ -2,7 +2,7 @@
 
 A Flask contact form for name, email, and message. PostgreSQL on Amazon RDS stores submissions; Amazon EKS runs the app. Terraform owns the AWS infrastructure, and Ansible owns the Kubernetes deployment.
 
-**Status (27 September 2026):** The Flask form, PostgreSQL schema, and Docker image were verified locally; an earlier 13 application tests passed and a browser submission reached local PostgreSQL. The combined workstation/helper suite passed 30 offline tests on 27 September. The Terraform state bucket is provisioned and verified in AWS. Foundation and workload Terraform and Ansible are locally validated drafts, but have not been applied or run against AWS. No EKS, RDS, or ALB resources have been deployed.
+**Status (27 September 2026):** The Flask form, PostgreSQL schema, and Docker image were verified locally; an earlier 13 application tests passed and a browser submission reached local PostgreSQL. The combined workstation/helper suite passed 30 offline tests on 27 September. The Terraform state bucket and foundation stage 01 (Route 53 zone, evidence bucket, and three seven-day log groups) are applied in AWS. Later foundation stages, workload Terraform, and Ansible remain untested in AWS. This project has not deployed EKS, RDS, or an ALB.
 
 ## Architecture
 
@@ -15,7 +15,7 @@ The environment is planned for `ap-southeast-1` across two Availability Zones (A
 - RDS PostgreSQL uses a Multi-AZ DB instance: one writer and one standby in separate private database subnets. The app connects to the writer endpoint, which can move after failover.
 - The EKS Kubernetes API is private. Ansible runs on the local workstation and reaches it through an AWS Systems Manager (SSM) tunnel and a private EC2 relay. The relay has no public IP or inbound SSH rule.
 - Terraform provisions the network, EKS, RDS, IAM, Secrets Manager, and supporting services. Ansible installs the AWS Load Balancer Controller and applies the Kubernetes Ingress. The controller creates **one** physical ALB; Terraform does not create a separate `aws_lb`.
-- Route 53 and an ACM certificate are planned for the HTTPS hostname. Browser-to-ALB traffic uses HTTPS. ALB-to-pod traffic uses HTTP inside the VPC, restricted by security groups. Flask-to-RDS traffic must verify the RDS TLS certificate.
+- The Route 53 hosted zone exists; registrar delegation and the ACM certificate are pending. Browser-to-ALB traffic will use HTTPS. ALB-to-pod traffic uses HTTP inside the VPC, restricted by security groups. Flask-to-RDS traffic must verify the RDS TLS certificate.
 
 Secrets Manager holds two kinds of database credentials: the RDS-managed master secret and a separate, restricted application credential. The Flask pods read only the application secret using an IAM role for their Kubernetes service account (IRSA). The diagram leaves Secrets Manager unconnected to keep the traffic path readable; access is through the workers' same-AZ NAT gateways unless a VPC endpoint is added.
 
@@ -37,7 +37,7 @@ Present now:
 | `scripts/` | Draft tunnel, image publishing and ALB/DNS helpers |
 | `.gitignore` | Excludes local secrets, state, plans, and generated files |
 
-Foundation Terraform is locally validated but has not been applied; workload is a locally validated draft; Ansible is drafted but untested against EKS. Only the Terraform state bucket and its configuration have been created in AWS.
+Foundation stage 01 is applied and verified; later stages are locally validated but untested in AWS. Workload Terraform is a locally validated draft, and Ansible is drafted but untested against EKS.
 
 ## Prerequisites and cost gate
 

@@ -9,7 +9,7 @@
         "route53:ListResourceRecordSets",
         "route53:ListTagsForResource"
       ],
-      "Resource": "arn:aws:route53:::hostedzone/*"
+      "Resource": "arn:aws:route53:::hostedzone/Z0153068M1DZTUZ2CE23"
     },
     {
       "Sid": "PollDnsChanges",

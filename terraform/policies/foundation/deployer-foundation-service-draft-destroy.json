@@ -5,7 +5,7 @@
       "Sid": "DeleteOnlyAcmValidationCnames",
       "Effect": "Allow",
       "Action": "route53:ChangeResourceRecordSets",
-      "Resource": "arn:aws:route53:::hostedzone/*",
+      "Resource": "arn:aws:route53:::hostedzone/Z0153068M1DZTUZ2CE23",
       "Condition": {
         "ForAllValues:StringLike": {
           "route53:ChangeResourceRecordSetsNormalizedRecordNames": "_*.cheelong.xyz"
