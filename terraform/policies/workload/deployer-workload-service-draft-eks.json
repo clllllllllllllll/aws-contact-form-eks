@@ -29,20 +29,25 @@
       }
     },
     {
-      "Sid": "ManageNamedCluster",
       "Effect": "Allow",
       "Action": [
-        "eks:DescribeCluster",
         "eks:UpdateClusterConfig",
         "eks:UpdateClusterVersion",
         "eks:DeleteCluster",
-        "eks:ListAccessEntries",
-        "eks:ListAddons",
-        "eks:ListNodegroups",
-        "eks:ListUpdates",
-        "eks:DescribeUpdate"
+        "eks:UpdateAddon",
+        "eks:DeleteAddon",
+        "eks:UpdateNodegroupConfig",
+        "eks:UpdateNodegroupVersion",
+        "eks:DeleteNodegroup"
       ],
-      "Resource": "arn:aws:eks:ap-southeast-1:203888389134:cluster/contact-form-eks",
+      "Resource": [
+        "arn:aws:eks:ap-southeast-1:203888389134:cluster/contact-form-eks",
+        "arn:aws:eks:ap-southeast-1:203888389134:addon/contact-form-eks/vpc-cni/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:addon/contact-form-eks/kube-proxy/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:addon/contact-form-eks/coredns/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:nodegroup/contact-form-eks/contact-form-eks-0/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:nodegroup/contact-form-eks/contact-form-eks-1/*"
+      ],
       "Condition": {
         "StringEquals": {
           "aws:ResourceTag/Project": "aws-contact-form-eks",
@@ -58,7 +63,46 @@
       }
     },
     {
-      "Sid": "CreateTaggedClusterChildren",
+      "Effect": "Allow",
+      "Action": [
+        "eks:DescribeCluster",
+        "eks:ListAccessEntries",
+        "eks:ListAddons",
+        "eks:ListNodegroups",
+        "eks:ListUpdates",
+        "eks:DescribeUpdate",
+        "eks:DescribeAddon",
+        "eks:DescribeNodegroup",
+        "eks:ListTagsForResource"
+      ],
+      "Resource": [
+        "arn:aws:eks:ap-southeast-1:203888389134:cluster/contact-form-eks",
+        "arn:aws:eks:ap-southeast-1:203888389134:addon/contact-form-eks/vpc-cni/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:addon/contact-form-eks/kube-proxy/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:addon/contact-form-eks/coredns/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:nodegroup/contact-form-eks/contact-form-eks-0/*",
+        "arn:aws:eks:ap-southeast-1:203888389134:nodegroup/contact-form-eks/contact-form-eks-1/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "eks:DescribeAccessEntry",
+        "eks:ListAssociatedAccessPolicies"
+      ],
+      "Resource": "arn:aws:eks:ap-southeast-1:203888389134:access-entry/contact-form-eks/*/203888389134/contact-form-deployer/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "eks:ListClusters",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-southeast-1"
+        }
+      }
+    },
+    {
       "Effect": "Allow",
       "Action": [
         "eks:CreateAddon",
@@ -93,13 +137,8 @@
       }
     },
     {
-      "Sid": "ManageDeployerAccessEntry",
       "Effect": "Allow",
-      "Action": [
-        "eks:DescribeAccessEntry",
-        "eks:DeleteAccessEntry",
-        "eks:ListAssociatedAccessPolicies"
-      ],
+      "Action": "eks:DeleteAccessEntry",
       "Resource": "arn:aws:eks:ap-southeast-1:203888389134:access-entry/contact-form-eks/*/203888389134/contact-form-deployer/*",
       "Condition": {
         "StringEquals": {
@@ -110,7 +149,6 @@
       }
     },
     {
-      "Sid": "AssociateOnlyClusterAdmin",
       "Effect": "Allow",
       "Action": [
         "eks:AssociateAccessPolicy",
@@ -127,51 +165,6 @@
       }
     },
     {
-      "Sid": "ManageThreeNamedAddons",
-      "Effect": "Allow",
-      "Action": [
-        "eks:DescribeAddon",
-        "eks:UpdateAddon",
-        "eks:DeleteAddon",
-        "eks:ListUpdates",
-        "eks:DescribeUpdate"
-      ],
-      "Resource": [
-        "arn:aws:eks:ap-southeast-1:203888389134:addon/contact-form-eks/vpc-cni/*",
-        "arn:aws:eks:ap-southeast-1:203888389134:addon/contact-form-eks/kube-proxy/*",
-        "arn:aws:eks:ap-southeast-1:203888389134:addon/contact-form-eks/coredns/*"
-      ],
-      "Condition": {
-        "StringEquals": {
-          "aws:ResourceTag/Project": "aws-contact-form-eks",
-          "aws:ResourceTag/Lifecycle": "workload"
-        }
-      }
-    },
-    {
-      "Sid": "ManageTwoNamedNodegroups",
-      "Effect": "Allow",
-      "Action": [
-        "eks:DescribeNodegroup",
-        "eks:UpdateNodegroupConfig",
-        "eks:UpdateNodegroupVersion",
-        "eks:DeleteNodegroup",
-        "eks:ListUpdates",
-        "eks:DescribeUpdate"
-      ],
-      "Resource": [
-        "arn:aws:eks:ap-southeast-1:203888389134:nodegroup/contact-form-eks/contact-form-eks-0/*",
-        "arn:aws:eks:ap-southeast-1:203888389134:nodegroup/contact-form-eks/contact-form-eks-1/*"
-      ],
-      "Condition": {
-        "StringEquals": {
-          "aws:ResourceTag/Project": "aws-contact-form-eks",
-          "aws:ResourceTag/Lifecycle": "workload"
-        }
-      }
-    },
-    {
-      "Sid": "TagOnlyNamedResourcesOnCreate",
       "Effect": "Allow",
       "Action": "eks:TagResource",
       "Resource": [
@@ -192,12 +185,10 @@
       }
     },
     {
-      "Sid": "MaintainOwnedResourceTags",
       "Effect": "Allow",
       "Action": [
         "eks:TagResource",
-        "eks:UntagResource",
-        "eks:ListTagsForResource"
+        "eks:UntagResource"
       ],
       "Resource": [
         "arn:aws:eks:ap-southeast-1:203888389134:cluster/contact-form-eks",

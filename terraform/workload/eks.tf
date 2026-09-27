@@ -56,6 +56,7 @@ resource "aws_eks_addon" "kube_proxy" {
 
 resource "aws_launch_template" "nodes" {
   name_prefix = "contact-form-nodes-"
+  tags        = { Name = "contact-form-nodes" }
   vpc_security_group_ids = [
     aws_security_group.nodes.id,
     aws_eks_cluster.main.vpc_config[0].cluster_security_group_id,
@@ -75,13 +76,19 @@ resource "aws_launch_template" "nodes" {
   }
   tag_specifications {
     resource_type = "instance"
-    tags          = { Name = "contact-form-eks-worker" }
+    tags = {
+      Name      = "contact-form-eks-worker"
+      Project   = "aws-contact-form-eks"
+      ManagedBy = "Terraform"
+      Lifecycle = "workload"
+    }
   }
   tag_specifications {
     resource_type = "volume"
     tags = {
       Name      = "contact-form-eks-worker-root"
       Project   = "aws-contact-form-eks"
+      ManagedBy = "Terraform"
       Lifecycle = "workload"
     }
   }

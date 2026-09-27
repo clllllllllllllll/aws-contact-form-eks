@@ -77,12 +77,20 @@
       }
     },
     {
-      "Sid": "ManageNamedDatabase",
+      "Sid": "ReadRegionalDatabaseMetadata",
       "Effect": "Allow",
-      "Action": [
-        "rds:DescribeDBInstances",
-        "rds:DeleteDBInstance"
-      ],
+      "Action": "rds:DescribeDBInstances",
+      "Resource": "arn:aws:rds:ap-southeast-1:203888389134:db:*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-southeast-1"
+        }
+      }
+    },
+    {
+      "Sid": "DeleteNamedDatabase",
+      "Effect": "Allow",
+      "Action": "rds:DeleteDBInstance",
       "Resource": "arn:aws:rds:ap-southeast-1:203888389134:db:contact-form-postgres",
       "Condition": {
         "StringEquals": {

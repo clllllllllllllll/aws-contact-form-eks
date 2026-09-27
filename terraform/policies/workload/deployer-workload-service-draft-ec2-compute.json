@@ -2,10 +2,15 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "CreateNamedSecurityGroups",
       "Effect": "Allow",
-      "Action": "ec2:CreateSecurityGroup",
-      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:security-group/*",
+      "Action": [
+        "ec2:CreateSecurityGroup",
+        "ec2:CreateLaunchTemplate"
+      ],
+      "Resource": [
+        "arn:aws:ec2:ap-southeast-1:203888389134:security-group/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:launch-template/*"
+      ],
       "Condition": {
         "StringEquals": {
           "aws:RequestTag/Project": "aws-contact-form-eks",
@@ -18,7 +23,6 @@
       }
     },
     {
-      "Sid": "UseOwnedVpcForSecurityGroups",
       "Effect": "Allow",
       "Action": "ec2:CreateSecurityGroup",
       "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:vpc/*",
@@ -30,7 +34,6 @@
       }
     },
     {
-      "Sid": "ManageOwnedSecurityGroupsAndRules",
       "Effect": "Allow",
       "Action": [
         "ec2:DeleteSecurityGroup",
@@ -38,9 +41,12 @@
         "ec2:AuthorizeSecurityGroupEgress",
         "ec2:RevokeSecurityGroupIngress",
         "ec2:RevokeSecurityGroupEgress",
-        "ec2:ModifySecurityGroupRules"
+        "ec2:CreateLaunchTemplateVersion",
+        "ec2:DeleteLaunchTemplateVersions",
+        "ec2:ModifyLaunchTemplate",
+        "ec2:DeleteLaunchTemplate"
       ],
-      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:security-group/*",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:*",
       "Condition": {
         "StringEquals": {
           "aws:ResourceTag/Project": "aws-contact-form-eks",
@@ -49,12 +55,12 @@
       }
     },
     {
-      "Sid": "RulesOnEksManagedClusterGroup",
       "Effect": "Allow",
       "Action": [
         "ec2:AuthorizeSecurityGroupIngress",
         "ec2:RevokeSecurityGroupIngress",
-        "ec2:ModifySecurityGroupRules"
+        "ec2:ModifySecurityGroupRules",
+        "ec2:RunInstances"
       ],
       "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:security-group/*",
       "Condition": {
@@ -65,7 +71,6 @@
       }
     },
     {
-      "Sid": "CreateTaggedSecurityGroupRules",
       "Effect": "Allow",
       "Action": [
         "ec2:AuthorizeSecurityGroupIngress",
@@ -81,37 +86,24 @@
       }
     },
     {
-      "Sid": "CreateTaggedNodeLaunchTemplate",
       "Effect": "Allow",
-      "Action": "ec2:CreateLaunchTemplate",
-      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:launch-template/*",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:instance/*",
       "Condition": {
         "StringEquals": {
           "aws:RequestTag/Project": "aws-contact-form-eks",
           "aws:RequestTag/ManagedBy": "Terraform",
-          "aws:RequestTag/Lifecycle": "workload"
+          "aws:RequestTag/Lifecycle": "workload",
+          "aws:RequestTag/Name": "contact-form-eks-worker",
+          "ec2:InstanceType": "t3.medium",
+          "ec2:MetadataHttpTokens": "required"
+        },
+        "ArnLike": {
+          "ec2:LaunchTemplate": "arn:aws:ec2:ap-southeast-1:203888389134:launch-template/lt-*"
         }
       }
     },
     {
-      "Sid": "MaintainNodeLaunchTemplate",
-      "Effect": "Allow",
-      "Action": [
-        "ec2:CreateLaunchTemplateVersion",
-        "ec2:DeleteLaunchTemplateVersions",
-        "ec2:ModifyLaunchTemplate",
-        "ec2:DeleteLaunchTemplate"
-      ],
-      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:launch-template/*",
-      "Condition": {
-        "StringEquals": {
-          "aws:ResourceTag/Project": "aws-contact-form-eks",
-          "aws:ResourceTag/Lifecycle": "workload"
-        }
-      }
-    },
-    {
-      "Sid": "LaunchNamedPrivateRelay",
       "Effect": "Allow",
       "Action": "ec2:RunInstances",
       "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:instance/*",
@@ -128,7 +120,6 @@
       }
     },
     {
-      "Sid": "UseAmazonAmiForRelay",
       "Effect": "Allow",
       "Action": "ec2:RunInstances",
       "Resource": "arn:aws:ec2:ap-southeast-1::image/ami-*",
@@ -139,22 +130,29 @@
       }
     },
     {
-      "Sid": "UseOwnedRelaySubnetAndGroup",
       "Effect": "Allow",
       "Action": "ec2:RunInstances",
       "Resource": [
         "arn:aws:ec2:ap-southeast-1:203888389134:subnet/*",
-        "arn:aws:ec2:ap-southeast-1:203888389134:security-group/*"
+        "arn:aws:ec2:ap-southeast-1:203888389134:security-group/*",
+        "arn:aws:ec2:ap-southeast-1:203888389134:launch-template/*"
       ],
       "Condition": {
         "StringEquals": {
           "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/ManagedBy": "Terraform",
           "aws:ResourceTag/Lifecycle": "workload"
+        },
+        "StringLike": {
+          "aws:ResourceTag/Name": [
+            "contact-form-app-*",
+            "contact-form-relay",
+            "contact-form-nodes"
+          ]
         }
       }
     },
     {
-      "Sid": "CreatePrivateRelayInterface",
       "Effect": "Allow",
       "Action": "ec2:RunInstances",
       "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:network-interface/*",
@@ -165,7 +163,6 @@
       }
     },
     {
-      "Sid": "CreateEncryptedRelayRootVolume",
       "Effect": "Allow",
       "Action": "ec2:RunInstances",
       "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:volume/*",
@@ -184,7 +181,26 @@
       }
     },
     {
-      "Sid": "TerminateOwnedRelay",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:volume/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload",
+          "aws:RequestTag/Name": "contact-form-eks-worker-root",
+          "ec2:VolumeType": "gp3"
+        },
+        "Bool": {
+          "ec2:Encrypted": "true"
+        },
+        "NumericEquals": {
+          "ec2:VolumeSize": "30"
+        }
+      }
+    },
+    {
       "Effect": "Allow",
       "Action": "ec2:TerminateInstances",
       "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:instance/*",
@@ -197,7 +213,6 @@
       }
     },
     {
-      "Sid": "TagComputeAtCreation",
       "Effect": "Allow",
       "Action": "ec2:CreateTags",
       "Resource": [
@@ -223,7 +238,6 @@
       }
     },
     {
-      "Sid": "MaintainOwnedComputeAndRules",
       "Effect": "Allow",
       "Action": [
         "ec2:CreateTags",
@@ -244,7 +258,6 @@
       }
     },
     {
-      "Sid": "MaintainRelayAndWorkerRootTags",
       "Effect": "Allow",
       "Action": [
         "ec2:CreateTags",

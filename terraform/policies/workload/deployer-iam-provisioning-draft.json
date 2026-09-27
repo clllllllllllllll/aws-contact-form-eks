@@ -168,6 +168,15 @@
       }
     },
     {
+      "Sid": "ReadEksNodegroupLinkedRole",
+      "Effect": "Allow",
+      "Action": "iam:GetRole",
+      "Resource": [
+        "arn:aws:iam::203888389134:role/aws-service-role/eks-nodegroup.amazonaws.com/AWSServiceRoleForAmazonEKSNodegroup",
+        "arn:aws:iam::203888389134:role/AWSServiceRoleForAmazonEKSNodegroup"
+      ]
+    },
+    {
       "Sid": "CreateEksNodegroupLinkedRoleIfAbsent",
       "Effect": "Allow",
       "Action": "iam:CreateServiceLinkedRole",

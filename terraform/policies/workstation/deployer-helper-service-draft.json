@@ -24,17 +24,12 @@
       "Condition": {"StringEquals": {"aws:RequestedRegion": "ap-southeast-1"}}
     },
     {
-      "Sid": "StartSessionOnTaggedRelayOnly",
+      "Sid": "StartSessionOnCurrentRelayOnly",
       "Effect": "Allow",
       "Action": "ssm:StartSession",
-      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:instance/*",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:instance/i-BOOTSTRAP-PLACEHOLDER",
       "Condition": {
-        "StringEquals": {
-          "ssm:resourceTag/Name": "contact-form-ssm-relay",
-          "ssm:resourceTag/Project": "aws-contact-form-eks",
-          "ssm:resourceTag/Lifecycle": "workload"
-        },
-        "Bool": {"ssm:SessionDocumentAccessCheck": "true"}
+        "BoolIfExists": {"ssm:SessionDocumentAccessCheck": "true"}
       }
     },
     {
