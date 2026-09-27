@@ -28,6 +28,9 @@
           "rds:DatabaseClass": "db.t4g.small",
           "rds:DatabaseName": "contactform"
         },
+        "NumericEquals": {
+          "rds:StorageSize": "20"
+        },
         "Bool": {
           "rds:MultiAz": "true",
           "rds:StorageEncrypted": "true",
@@ -47,6 +50,15 @@
           "aws:ResourceTag/Lifecycle": "workload"
         }
       }
+    },
+    {
+      "Sid": "UseDefaultPostgresGroupsForDatabase",
+      "Effect": "Allow",
+      "Action": "rds:CreateDBInstance",
+      "Resource": [
+        "arn:aws:rds:ap-southeast-1:203888389134:og:default:postgres-*",
+        "arn:aws:rds:ap-southeast-1:203888389134:pg:default.postgres*"
+      ]
     },
     {
       "Sid": "TagNamedDatabaseAtCreation",
@@ -69,7 +81,6 @@
       "Effect": "Allow",
       "Action": [
         "rds:DescribeDBInstances",
-        "rds:ModifyDBInstance",
         "rds:DeleteDBInstance"
       ],
       "Resource": "arn:aws:rds:ap-southeast-1:203888389134:db:contact-form-postgres",
@@ -77,6 +88,28 @@
         "StringEquals": {
           "aws:ResourceTag/Project": "aws-contact-form-eks",
           "aws:ResourceTag/Lifecycle": "workload"
+        },
+        "BoolIfExists": {
+          "rds:MultiAz": "true",
+          "rds:ManageMasterUserPassword": "true"
+        }
+      }
+    },
+    {
+      "Sid": "ModifyNamedDatabaseWithinApprovedSize",
+      "Effect": "Allow",
+      "Action": "rds:ModifyDBInstance",
+      "Resource": "arn:aws:rds:ap-southeast-1:203888389134:db:contact-form-postgres",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/Lifecycle": "workload"
+        },
+        "StringEqualsIfExists": {
+          "rds:DatabaseClass": "db.t4g.small"
+        },
+        "NumericLessThanEqualsIfExists": {
+          "rds:StorageSize": "40"
         },
         "BoolIfExists": {
           "rds:MultiAz": "true",

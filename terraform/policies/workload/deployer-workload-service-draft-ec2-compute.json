@@ -177,6 +177,9 @@
         },
         "Bool": {
           "ec2:Encrypted": "true"
+        },
+        "NumericLessThanEquals": {
+          "ec2:VolumeSize": "8"
         }
       }
     },
