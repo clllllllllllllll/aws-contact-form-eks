@@ -2,13 +2,11 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "IdentifyDeployer",
       "Effect": "Allow",
       "Action": "sts:GetCallerIdentity",
       "Resource": "*"
     },
     {
-      "Sid": "ReadSingaporeCapacityAndVersions",
       "Effect": "Allow",
       "Action": [
         "ec2:DescribeAvailabilityZones",
@@ -27,19 +25,16 @@
       }
     },
     {
-      "Sid": "ReadAppliedStandardOnDemandQuota",
       "Effect": "Allow",
       "Action": "servicequotas:GetServiceQuota",
       "Resource": "arn:aws:servicequotas:ap-southeast-1:203888389134:ec2/L-1216C47A",
       "Condition": {
         "StringEquals": {
-          "aws:RequestedRegion": "ap-southeast-1",
-          "servicequotas:service": "ec2"
+          "aws:RequestedRegion": "ap-southeast-1"
         }
       }
     },
     {
-      "Sid": "ReadPublicRecommendedNodeAMI",
       "Effect": "Allow",
       "Action": "ssm:GetParameter",
       "Resource": "arn:aws:ssm:ap-southeast-1::parameter/aws/service/eks/optimized-ami/*/amazon-linux-2023/x86_64/standard/*"

@@ -31,6 +31,7 @@ Present now:
 | `docs/security.md` | Planned controls, evidence commands, actual-findings register, and demo exceptions; dated screenshots will be added after live checks |
 | `app/` | Flask form, SQL schema, Docker image, local Makefile, and integration tests; verified locally |
 | `terraform/bootstrap/`, `terraform/foundation/`, `terraform/workload/` | Applied state-bucket bootstrap; foundation and workload are locally validated drafts; neither is applied |
+| `terraform/policies/` | Operator IAM policy drafts for manual review; see [policy notes](terraform/policies/README.md) |
 | `terraform/README.md`, `ansible/README.md` | Terraform backend/stage instructions and Kubernetes deployment/cleanup commands |
 | `ansible/` | Draft deploy/cleanup playbooks and manifests; locally syntax checked |
 | `scripts/` | Draft tunnel, image publishing and ALB/DNS helpers |
@@ -76,7 +77,7 @@ Never commit AWS credentials, Terraform state or plan files, kubeconfig, private
 
 The non-root `contact-form-deployer` user in account `203888389134` created the state bucket `aws-contact-form-eks-tfstate-203888389134-ap-southeast-1` in Singapore. Terraform reported no drift after apply. Direct AWS checks returned versioning `Enabled`, all four public-access blocks `true`, default SSE-S3 encryption `AES256`, and `BucketOwnerEnforced` ownership. The bucket policy denies S3 requests when `aws:SecureTransport` is `false`. No foundation or workload state objects had been written at that verification; recheck both remote keys before live backend initialization.
 
-For a fresh setup in this specific AWS account, attach the scoped `terraform/bootstrap/bucket-setup-policy.json` and `state-access-policy.json` as inline policies on an authorized non-root deployer before running:
+For a fresh setup in this specific AWS account, attach the scoped `terraform/policies/bootstrap/bucket-setup-policy.json` and `terraform/policies/bootstrap/state-access-policy.json` as inline policies on an authorized non-root deployer before running:
 
 ```bash
 cd /home/limch/projects/aws-contact-form-eks
@@ -88,7 +89,7 @@ AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/bootstrap apply -no
 AWS_PROFILE=contact-form-deployer terraform -chdir=terraform/bootstrap plan -no-color
 ```
 
-Confirm the account and review the plan and cost before typing `yes` at apply. The last plan should say `No changes`. The IAM policies are one-time account access setup performed in the IAM Console; the S3 resource itself was created by Terraform. The bucket-setup policy was removed after bootstrap verification on 26 September 2026; the ongoing state-access policy remains. Test backend access with that policy alone. Restore the setup policy temporarily for deliberate bootstrap maintenance. A full bucket teardown needs a separately reviewed deletion procedure after foundation and workload are gone.
+Confirm the account and review the plan and cost before typing `yes` at apply. The last plan should say `No changes`. The IAM policy files document manual account access setup; the S3 resource itself was created by Terraform. The bucket-setup policy was removed after bootstrap verification on 26 September 2026. Verify the actual state-access grant and backend access before relying on them. Restore the setup policy temporarily for deliberate bootstrap maintenance. A full bucket teardown needs a separately reviewed deletion procedure after foundation and workload are gone.
 
 Bootstrap state stays local at `terraform/bootstrap/terraform.tfstate` and is excluded from Git. The state and backup were restricted to owner-only mode `600`; use `umask 077` before future local Terraform runs. Preserve it securely: the S3 backend makes **foundation and workload state** shareable between workstations, not bootstrap's own local state. Do not run bootstrap apply from another checkout without first restoring this state or deliberately importing the bucket. AWS recommends waiting 15 minutes after first enabling S3 versioning before writing state objects to the bucket. [S3 versioning guidance](https://docs.aws.amazon.com/AmazonS3/latest/userguide/manage-versioning-examples.html).
 
