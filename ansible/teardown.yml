@@ -102,6 +102,8 @@
           - "900"
           - --dns-name
           - "{{ alb_dns_name }}"
+          - --vpc-id
+          - "{{ tf.vpc_id.value }}"
       changed_when: false
 
     - name: Uninstall the AWS Load Balancer Controller

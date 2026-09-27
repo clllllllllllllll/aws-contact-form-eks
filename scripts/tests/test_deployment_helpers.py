@@ -12,6 +12,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from botocore.exceptions import ClientError
+
 from scripts import manage_alb, open_tunnel, publish_image
 
 
@@ -104,6 +106,69 @@ class DeploymentHelperTests(unittest.TestCase):
             self.assertTrue(changed)
             self.assertEqual(route53.changes[0]["ChangeBatch"]["Changes"][0]["Action"], "DELETE")
             self.assertFalse(marker.exists())
+
+    def test_cleanup_accepts_dualstack_alias_after_alb_disappears(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            marker = Path(temporary) / "alb-alias.json"
+            route53 = FakeRoute53(alias_record("dualstack." + ALB["DNSName"]))
+            with (
+                patch.object(manage_alb, "ALIAS_RECORD_PATH", marker),
+                patch.object(manage_alb, "owned_balancers", return_value=[]),
+            ):
+                manage_alb.save_alias_record(CREATE_ARGS, ALB)
+                self.assertTrue(manage_alb.update_alias(REMOVE_ARGS, object(), route53))
+            self.assertEqual(route53.changes[0]["ChangeBatch"]["Changes"][0]["Action"], "DELETE")
+
+    def test_wait_for_alb_rechecks_at_deadline_and_uses_vpc_when_tags_are_missing(self):
+        clock = [0]
+        elbv2 = Mock()
+        elbv2.get_paginator.return_value.paginate.side_effect = [
+            [{"LoadBalancers": [{"DNSName": ALB["DNSName"], "VpcId": "vpc-workload"}]}],
+            [{"LoadBalancers": []}],
+        ]
+        with (
+            patch.object(manage_alb, "owned_balancers", return_value=[]),
+            patch.object(manage_alb.time, "monotonic", side_effect=lambda: clock[0]),
+            patch.object(manage_alb.time, "sleep", side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds)),
+        ):
+            manage_alb.wait_deleted(elbv2, 15, "vpc-workload")
+        self.assertEqual(elbv2.get_paginator.return_value.paginate.call_count, 2)
+
+    def test_wait_for_alb_still_present_at_deadline_blocks_teardown(self):
+        clock = [0]
+        elbv2 = Mock()
+        elbv2.get_paginator.return_value.paginate.return_value = [
+            {"LoadBalancers": [{"DNSName": ALB["DNSName"], "VpcId": "vpc-workload"}]},
+        ]
+        with (
+            patch.object(manage_alb, "owned_balancers", return_value=[]),
+            patch.object(manage_alb.time, "monotonic", side_effect=lambda: clock[0]),
+            patch.object(manage_alb.time, "sleep", side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds)),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "still exists"):
+                manage_alb.wait_deleted(elbv2, 15, "vpc-workload")
+        self.assertEqual(elbv2.get_paginator.return_value.paginate.call_count, 2)
+
+    def test_alb_tag_read_tolerates_one_balancer_deleted_during_listing(self):
+        elbv2 = Mock()
+        elbv2.get_paginator.return_value.paginate.return_value = [{"LoadBalancers": [
+            {"LoadBalancerArn": "arn:deleted"}, {"LoadBalancerArn": "arn:owned"},
+        ]}]
+        missing = ClientError({
+            "Error": {"Code": "LoadBalancerNotFound", "Message": "deleted"},
+        }, "DescribeTags")
+        elbv2.describe_tags.side_effect = [
+            missing,
+            missing,
+            {"TagDescriptions": [{"ResourceArn": "arn:owned", "Tags": [
+                {"Key": "elbv2.k8s.aws/cluster", "Value": manage_alb.CLUSTER},
+                {"Key": "ingress.k8s.aws/stack", "Value": manage_alb.STACK},
+            ]}]},
+        ]
+        self.assertEqual(
+            list(manage_alb.owned_balancers(elbv2)),
+            [{"LoadBalancerArn": "arn:owned"}],
+        )
 
     def test_kubeconfig_keeps_original_hostname_and_ca_validation(self):
         with tempfile.TemporaryDirectory() as temporary:

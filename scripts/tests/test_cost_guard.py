@@ -29,17 +29,70 @@ class CostGuardTests(unittest.TestCase):
     def test_residual_inventory_propagates_denied_reads(self):
         session = Mock()
         session.region_name = check_residual.REGION
+        ec2 = Mock()
+        ec2.get_paginator.return_value.paginate.side_effect = ClientError({
+            "Error": {"Code": "AccessDenied", "Message": "denied"},
+        }, "DescribeVpcs")
         session.client.side_effect = lambda service: {
             "sts": Mock(get_caller_identity=Mock(return_value={
                 "Account": check_residual.ACCOUNT,
                 "Arn": f"arn:aws:iam::{check_residual.ACCOUNT}:user/contact-form-deployer",
             })),
-            "ec2": Mock(describe_vpcs=Mock(side_effect=ClientError({
-                "Error": {"Code": "AccessDenied", "Message": "denied"},
-            }, "DescribeVpcs"))),
+            "ec2": ec2,
         }[service]
         with self.assertRaises(ClientError):
             check_residual.collect(session)
+
+    def test_vpc_inventory_keeps_workload_vpc_when_name_tag_is_missing(self):
+        ec2 = Mock()
+        ec2.get_paginator.return_value.paginate.return_value = [{"Vpcs": [
+            {"VpcId": "vpc-owned", "Tags": [
+                {"Key": "Project", "Value": check_residual.PROJECT},
+                {"Key": "Lifecycle", "Value": "workload"},
+            ]},
+            {"VpcId": "vpc-unrelated", "Tags": [{"Key": "Name", "Value": "other"}]},
+        ]}]
+        self.assertEqual(check_residual.vpc_inventory(ec2), {"vpc-owned"})
+
+    def test_nat_inventory_finds_untagged_gateway_and_its_eip_in_workload_vpc(self):
+        ec2 = Mock()
+        ec2.get_paginator.return_value.paginate.return_value = [{"NatGateways": [
+            {"NatGatewayId": "nat-owned", "VpcId": "vpc-owned", "State": "available",
+             "NatGatewayAddresses": [{"AllocationId": "eip-owned"}]},
+            {"NatGatewayId": "nat-named", "VpcId": "vpc-other", "State": "available",
+             "Tags": [{"Key": "Name", "Value": "contact-form-nat-b"}]},
+            {"NatGatewayId": "nat-unrelated", "VpcId": "vpc-other", "State": "available"},
+            {"NatGatewayId": "nat-deleted", "VpcId": "vpc-owned", "State": "deleted"},
+        ]}]
+        ec2.describe_addresses.return_value = {"Addresses": [
+            {"AllocationId": "eip-owned"},
+            {"AllocationId": "eip-named", "Tags": [
+                {"Key": "Name", "Value": "contact-form-nat-a"},
+            ]},
+            {"AllocationId": "eip-unrelated"},
+        ]}
+        self.assertEqual(check_residual.nat_inventory(ec2, {"vpc-owned"}), (
+            ["nat-named", "nat-owned"], ["eip-named", "eip-owned"],
+        ))
+        self.assertEqual(ec2.get_paginator.return_value.paginate.call_args.kwargs, {})
+        self.assertEqual(ec2.describe_addresses.call_args.kwargs, {})
+
+    def test_nat_inventory_finds_detached_workload_eip_without_name_tag(self):
+        ec2 = Mock()
+        ec2.get_paginator.return_value.paginate.return_value = [{"NatGateways": []}]
+        ec2.describe_addresses.return_value = {"Addresses": [
+            {"AllocationId": "eip-detached", "Tags": [
+                {"Key": "Project", "Value": check_residual.PROJECT},
+                {"Key": "Lifecycle", "Value": check_residual.LIFECYCLE},
+            ]},
+            {"AllocationId": "eip-unrelated", "Tags": [
+                {"Key": "Project", "Value": check_residual.PROJECT},
+                {"Key": "Lifecycle", "Value": "foundation"},
+            ]},
+        ]}
+        self.assertEqual(check_residual.nat_inventory(ec2, set()), (
+            [], ["eip-detached"],
+        ))
 
     def test_ebs_inventory_includes_only_tagged_workload_resources(self):
         owned = [

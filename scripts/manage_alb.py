@@ -21,6 +21,10 @@ def normalized(name):
     return name.lower().rstrip(".")
 
 
+def normalized_alb_dns(name):
+    return normalized(name).removeprefix("dualstack.")
+
+
 def read_alias_record():
     if not ALIAS_RECORD_PATH.exists():
         return None
@@ -64,7 +68,7 @@ def record_matches_alias(args, record):
         and marker.get("stack") == STACK
         and marker.get("zone_id") == args.zone_id
         and marker.get("domain") == normalized(args.domain)
-        and marker.get("dns_name") == normalized(target.get("DNSName", ""))
+        and normalized_alb_dns(marker.get("dns_name", "")) == normalized_alb_dns(target.get("DNSName", ""))
         and marker.get("alb_zone_id") == target.get("HostedZoneId")
     )
 
@@ -85,10 +89,25 @@ def owned_balancers(client):
         balancers = page["LoadBalancers"]
         for start in range(0, len(balancers), 20):
             chunk = balancers[start:start + 20]
-            tags = client.describe_tags(ResourceArns=[item["LoadBalancerArn"] for item in chunk])
+            try:
+                tag_descriptions = client.describe_tags(
+                    ResourceArns=[item["LoadBalancerArn"] for item in chunk],
+                )["TagDescriptions"]
+            except ClientError as error:
+                if error.response["Error"]["Code"] != "LoadBalancerNotFound":
+                    raise
+                tag_descriptions = []
+                for item in chunk:
+                    try:
+                        tag_descriptions.extend(client.describe_tags(
+                            ResourceArns=[item["LoadBalancerArn"]],
+                        )["TagDescriptions"])
+                    except ClientError as single_error:
+                        if single_error.response["Error"]["Code"] != "LoadBalancerNotFound":
+                            raise
             tag_by_arn = {
                 item["ResourceArn"]: {tag["Key"]: tag["Value"] for tag in item["Tags"]}
-                for item in tags["TagDescriptions"]
+                for item in tag_descriptions
             }
             for item in chunk:
                 item_tags = tag_by_arn.get(item["LoadBalancerArn"], {})
@@ -129,7 +148,7 @@ def update_alias(args, elbv2, route53):
     matches = list(owned_balancers(elbv2))
     current = existing_record(route53, args.zone_id, args.domain)
     if args.action == "create":
-        matches = [item for item in matches if normalized(item["DNSName"]) == normalized(args.dns_name)]
+        matches = [item for item in matches if normalized_alb_dns(item["DNSName"]) == normalized_alb_dns(args.dns_name)]
         if len(matches) != 1:
             raise RuntimeError("Ingress ALB is absent or does not have the expected ownership tags")
         alb = matches[0]
@@ -145,7 +164,7 @@ def update_alias(args, elbv2, route53):
         if current:
             existing_target = current.get("AliasTarget", {})
             if (
-                normalized(existing_target.get("DNSName", "")) == normalized(alb["DNSName"])
+                normalized_alb_dns(existing_target.get("DNSName", "")) == normalized_alb_dns(alb["DNSName"])
                 and existing_target.get("HostedZoneId") == alb["CanonicalHostedZoneId"]
                 and existing_target.get("EvaluateTargetHealth") is True
             ):
@@ -161,7 +180,7 @@ def update_alias(args, elbv2, route53):
         return False
     target = current.get("AliasTarget", {})
     tagged_match = any(
-        normalized(item["DNSName"]) == normalized(target.get("DNSName", ""))
+        normalized_alb_dns(item["DNSName"]) == normalized_alb_dns(target.get("DNSName", ""))
         and item["CanonicalHostedZoneId"] == target.get("HostedZoneId")
         for item in matches
     )
@@ -172,19 +191,22 @@ def update_alias(args, elbv2, route53):
     return True
 
 
-def wait_deleted(elbv2, timeout, dns_name=None):
+def wait_deleted(elbv2, timeout, vpc_id, dns_name=None):
     deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
+    while True:
         owned = list(owned_balancers(elbv2))
         all_balancers = elbv2.get_paginator("describe_load_balancers").paginate()
-        named = any(
-            normalized(item["DNSName"]) == normalized(dns_name)
+        in_workload_vpc_or_named = any(
+            item.get("VpcId") == vpc_id
+            or (dns_name and normalized_alb_dns(item["DNSName"]) == normalized_alb_dns(dns_name))
             for page in all_balancers for item in page["LoadBalancers"]
-        ) if dns_name else False
-        if not owned and not named:
+        )
+        if not owned and not in_workload_vpc_or_named:
             return
-        time.sleep(15)
-    raise RuntimeError("The controller ALB still exists; do not destroy EKS or the VPC")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("The controller ALB still exists; do not destroy EKS or the VPC")
+        time.sleep(min(15, remaining))
 
 
 def main():
@@ -194,19 +216,22 @@ def main():
     parser.add_argument("--zone-id")
     parser.add_argument("--domain")
     parser.add_argument("--dns-name")
+    parser.add_argument("--vpc-id")
     parser.add_argument("--timeout", type=int, default=900)
     args = parser.parse_args()
     if args.action in ("create", "remove") and (not args.zone_id or not args.domain):
         parser.error("--zone-id and --domain are required for alias changes")
     if args.action == "create" and not args.dns_name:
         parser.error("--dns-name is required to create an alias")
+    if args.action == "wait-deleted" and not args.vpc_id:
+        parser.error("--vpc-id is required to verify ALB deletion")
     session = boto3.Session(profile_name=args.profile, region_name=REGION)
     identity = session.client("sts").get_caller_identity()
     if identity["Account"] != ACCOUNT or identity["Arn"].endswith(":root"):
         raise RuntimeError("AWS profile does not match the authorized non-root account")
     elbv2 = session.client("elbv2")
     if args.action == "wait-deleted":
-        wait_deleted(elbv2, args.timeout, args.dns_name)
+        wait_deleted(elbv2, args.timeout, args.vpc_id, args.dns_name)
         print(json.dumps({"deleted": True}))
         return
     changed = update_alias(args, elbv2, session.client("route53"))

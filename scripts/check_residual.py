@@ -24,6 +24,48 @@ def workload_tags(tags, key="Key", value="Value"):
     return mapping.get("Project") == PROJECT and mapping.get("Lifecycle") == LIFECYCLE
 
 
+def has_name_prefix(item, prefix):
+    return any(
+        tag.get("Key") == "Name" and tag.get("Value", "").startswith(prefix)
+        for tag in item.get("Tags", [])
+    )
+
+
+def vpc_inventory(ec2):
+    return {
+        item["VpcId"]
+        for page in pages(ec2, "describe_vpcs")
+        for item in page["Vpcs"]
+        if any(tag.get("Key") == "Name" and tag.get("Value") == "contact-form-vpc"
+               for tag in item.get("Tags", []))
+        or workload_tags(item.get("Tags", []))
+    }
+
+
+def nat_inventory(ec2, vpc_ids):
+    gateways = [
+        item
+        for page in pages(ec2, "describe_nat_gateways")
+        for item in page["NatGateways"]
+        if item["State"] != "deleted"
+        and (item.get("VpcId") in vpc_ids or has_name_prefix(item, "contact-form-nat-"))
+    ]
+    allocation_ids = {
+        address["AllocationId"]
+        for gateway in gateways
+        for address in gateway.get("NatGatewayAddresses", [])
+        if "AllocationId" in address
+    }
+    addresses = [
+        item["AllocationId"]
+        for item in ec2.describe_addresses()["Addresses"]
+        if item["AllocationId"] in allocation_ids
+        or has_name_prefix(item, "contact-form-nat-")
+        or workload_tags(item.get("Tags", []))
+    ]
+    return sorted(gateway["NatGatewayId"] for gateway in gateways), sorted(addresses)
+
+
 def ebs_inventory(ec2):
     filters = [
         {"Name": "tag:Project", "Values": [PROJECT]},
@@ -101,25 +143,8 @@ def collect(session):
         raise RuntimeError("AWS profile does not match the authorized non-root account")
 
     ec2 = session.client("ec2")
-    vpcs = ec2.describe_vpcs(Filters=[
-        {"Name": "tag:Name", "Values": ["contact-form-vpc"]},
-    ])["Vpcs"]
-    vpc_ids = {item["VpcId"] for item in vpcs}
-
-    nat = [
-        item["NatGatewayId"]
-        for page in pages(ec2, "describe_nat_gateways", Filter=[
-            {"Name": "tag:Name", "Values": ["contact-form-nat-*"]},
-        ])
-        for item in page["NatGateways"]
-        if item["State"] not in ("deleted", "failed")
-    ]
-    addresses = [
-        item["AllocationId"]
-        for item in ec2.describe_addresses(Filters=[
-            {"Name": "tag:Name", "Values": ["contact-form-nat-*"]},
-        ])["Addresses"]
-    ]
+    vpc_ids = vpc_inventory(ec2)
+    nat, addresses = nat_inventory(ec2, vpc_ids)
     instances = [
         item["InstanceId"]
         for page in pages(ec2, "describe_instances", Filters=[
