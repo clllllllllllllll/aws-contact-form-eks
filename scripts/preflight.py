@@ -201,7 +201,7 @@ def check_eks(eks, versions):
     minor = versions["kubernetes_version"]
     listed = [
         item
-        for page in pages(eks, "describe_cluster_versions", clusterVersions=[minor], includeAll=True)
+        for page in pages(eks, "describe_cluster_versions", clusterVersions=[minor])
         for item in page["clusterVersions"]
         if item.get("clusterVersion") == minor
     ]

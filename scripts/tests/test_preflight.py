@@ -83,6 +83,51 @@ def capacity_clients(quota):
 
 
 class PreflightTests(unittest.TestCase):
+    def test_eks_version_request_uses_one_filter_and_requires_standard_support(self):
+        eks = Mock()
+        version_paginator = Mock()
+        addon_paginator = Mock()
+        support_status = "STANDARD_SUPPORT"
+
+        def paginate_versions(**arguments):
+            filters = {"defaultOnly", "clusterVersions", "includeAll", "status", "versionStatus"}
+            if len(filters.intersection(arguments)) != 1:
+                raise ValueError("EKS accepts only one cluster version filter")
+            self.assertEqual(arguments, {"clusterVersions": [VERSIONS["kubernetes_version"]]})
+            return [{"clusterVersions": [{
+                "clusterVersion": VERSIONS["kubernetes_version"],
+                "versionStatus": support_status,
+            }]}]
+
+        def paginate_addons(**arguments):
+            pin = next(
+                VERSIONS["addon_versions"][key]
+                for key, name in preflight.ADDONS.items()
+                if name == arguments["addonName"]
+            )
+            return [{"addons": [{
+                "addonName": arguments["addonName"],
+                "addonVersions": [{
+                    "addonVersion": pin,
+                    "compatibilities": [{"clusterVersion": VERSIONS["kubernetes_version"]}],
+                }],
+            }]}]
+
+        version_paginator.paginate.side_effect = paginate_versions
+        addon_paginator.paginate.side_effect = paginate_addons
+        eks.get_paginator.side_effect = lambda operation: {
+            "describe_cluster_versions": version_paginator,
+            "describe_addon_versions": addon_paginator,
+        }[operation]
+
+        self.assertEqual(
+            preflight.check_eks(eks, VERSIONS)["kubernetes_version"],
+            VERSIONS["kubernetes_version"],
+        )
+        support_status = "EXTENDED_SUPPORT"
+        with self.assertRaisesRegex(preflight.Blocked, "not confirmed in standard support"):
+            preflight.check_eks(eks, VERSIONS)
+
     def test_six_free_vcpus_pass_initial_gate_but_not_required_update_headroom(self):
         ec2, quotas = capacity_clients(6)
         capacity = preflight.standard_capacity(ec2, quotas)
