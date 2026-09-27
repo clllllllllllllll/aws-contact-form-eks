@@ -1,0 +1,110 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "kms:CreateKey",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload",
+          "aws:RequestedRegion": "ap-southeast-1",
+          "kms:KeySpec": "SYMMETRIC_DEFAULT",
+          "kms:KeyUsage": "ENCRYPT_DECRYPT",
+          "kms:KeyOrigin": "AWS_KMS"
+        },
+        "ForAllValues:StringEquals": {
+          "aws:TagKeys": [
+            "Project",
+            "ManagedBy",
+            "Lifecycle"
+          ]
+        },
+        "Null": {
+          "aws:TagKeys": "false"
+        },
+        "BoolIfExists": {
+          "kms:MultiRegion": "false"
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": "secretsmanager:CreateSecret",
+      "Resource": "arn:aws:secretsmanager:ap-southeast-1:203888389134:secret:contact-form/app-*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload"
+        },
+        "ForAllValues:StringEquals": {
+          "aws:TagKeys": [
+            "Project",
+            "ManagedBy",
+            "Lifecycle"
+          ]
+        },
+        "Null": {
+          "aws:TagKeys": "false"
+        },
+        "StringLike": {
+          "secretsmanager:Name": "contact-form/app-*"
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "kms:TagResource",
+        "secretsmanager:TagResource"
+      ],
+      "Resource": [
+        "arn:aws:kms:ap-southeast-1:203888389134:key/*",
+        "arn:aws:secretsmanager:ap-southeast-1:203888389134:secret:contact-form/app-*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "workload"
+        },
+        "ForAllValues:StringEquals": {
+          "aws:TagKeys": [
+            "Project",
+            "ManagedBy",
+            "Lifecycle"
+          ]
+        },
+        "Null": {
+          "aws:TagKeys": "false"
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "kms:DescribeKey",
+        "kms:GetKeyPolicy",
+        "kms:GetKeyRotationStatus",
+        "kms:ListResourceTags",
+        "kms:EnableKeyRotation",
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:GetResourcePolicy"
+      ],
+      "Resource": [
+        "arn:aws:kms:ap-southeast-1:203888389134:key/*",
+        "arn:aws:secretsmanager:ap-southeast-1:203888389134:secret:contact-form/app-*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "aws-contact-form-eks",
+          "aws:ResourceTag/ManagedBy": "Terraform",
+          "aws:ResourceTag/Lifecycle": "workload"
+        }
+      }
+    }
+  ]
+}
