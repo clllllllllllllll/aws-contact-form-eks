@@ -1,0 +1,157 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadFoundationZone",
+      "Effect": "Allow",
+      "Action": [
+        "route53:GetHostedZone",
+        "route53:ListResourceRecordSets",
+        "route53:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:route53:::hostedzone/*"
+    },
+    {
+      "Sid": "PollDnsChanges",
+      "Effect": "Allow",
+      "Action": "route53:GetChange",
+      "Resource": "arn:aws:route53:::change/*"
+    },
+    {
+      "Sid": "ReadEvidenceBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+        "s3:GetBucketTagging",
+        "s3:GetBucketPolicy",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:GetBucketOwnershipControls",
+        "s3:GetEncryptionConfiguration",
+        "s3:GetBucketVersioning",
+        "s3:GetLifecycleConfiguration",
+        "s3:GetBucketAcl",
+        "s3:GetBucketCORS",
+        "s3:GetBucketWebsite",
+        "s3:GetAccelerateConfiguration",
+        "s3:GetBucketRequestPayment",
+        "s3:GetBucketLogging",
+        "s3:GetReplicationConfiguration",
+        "s3:GetBucketObjectLockConfiguration"
+      ],
+      "Resource": "arn:aws:s3:::aws-contact-form-evidence-203888389134-ap-southeast-1"
+    },
+    {
+      "Sid": "ReadLogGroups",
+      "Effect": "Allow",
+      "Action": "logs:DescribeLogGroups",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-southeast-1"
+        }
+      }
+    },
+    {
+      "Sid": "ReadNamedLogGroupTags",
+      "Effect": "Allow",
+      "Action": "logs:ListTagsForResource",
+      "Resource": [
+        "arn:aws:logs:ap-southeast-1:203888389134:log-group:/aws/eks/contact-form-eks/cluster",
+        "arn:aws:logs:ap-southeast-1:203888389134:log-group:/aws/rds/instance/contact-form-postgres/postgresql",
+        "arn:aws:logs:ap-southeast-1:203888389134:log-group:/aws/rds/instance/contact-form-postgres/upgrade"
+      ]
+    },
+    {
+      "Sid": "CreatePublicHostedZone",
+      "Effect": "Allow",
+      "Action": "route53:CreateHostedZone",
+      "Resource": "*",
+      "Condition": {
+        "Null": {
+          "route53:VPCs": "true"
+        }
+      }
+    },
+    {
+      "Sid": "TagCreatedHostedZone",
+      "Effect": "Allow",
+      "Action": "route53:ChangeTagsForResource",
+      "Resource": "arn:aws:route53:::hostedzone/*"
+    },
+    {
+      "Sid": "CreateSingaporeEvidenceBucket",
+      "Effect": "Allow",
+      "Action": "s3:CreateBucket",
+      "Resource": "arn:aws:s3:::aws-contact-form-evidence-203888389134-ap-southeast-1",
+      "Condition": {
+        "StringEquals": {
+          "s3:locationconstraint": "ap-southeast-1"
+        }
+      }
+    },
+    {
+      "Sid": "TagEvidenceBucketAtCreate",
+      "Effect": "Allow",
+      "Action": "s3:TagResource",
+      "Resource": "arn:aws:s3:::aws-contact-form-evidence-203888389134-ap-southeast-1",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "aws-contact-form-eks",
+          "aws:RequestTag/ManagedBy": "Terraform",
+          "aws:RequestTag/Lifecycle": "foundation"
+        },
+        "ForAllValues:StringEquals": {
+          "aws:TagKeys": [
+            "Project",
+            "ManagedBy",
+            "Lifecycle"
+          ]
+        },
+        "Null": {
+          "aws:TagKeys": "false"
+        }
+      }
+    },
+    {
+      "Sid": "ConfigureEvidenceBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutBucketPublicAccessBlock",
+        "s3:PutBucketOwnershipControls",
+        "s3:PutEncryptionConfiguration",
+        "s3:PutBucketVersioning",
+        "s3:PutLifecycleConfiguration",
+        "s3:PutBucketPolicy",
+        "s3:PutBucketTagging"
+      ],
+      "Resource": "arn:aws:s3:::aws-contact-form-evidence-203888389134-ap-southeast-1"
+    },
+    {
+      "Sid": "CreateAndSetRetentionOnNamedLogGroups",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:PutRetentionPolicy"
+      ],
+      "Resource": [
+        "arn:aws:logs:ap-southeast-1:203888389134:log-group:/aws/eks/contact-form-eks/cluster:*",
+        "arn:aws:logs:ap-southeast-1:203888389134:log-group:/aws/rds/instance/contact-form-postgres/postgresql:*",
+        "arn:aws:logs:ap-southeast-1:203888389134:log-group:/aws/rds/instance/contact-form-postgres/upgrade:*"
+      ]
+    },
+    {
+      "Sid": "TagNamedLogGroups",
+      "Effect": "Allow",
+      "Action": [
+        "logs:TagResource",
+        "logs:UntagResource"
+      ],
+      "Resource": [
+        "arn:aws:logs:ap-southeast-1:203888389134:log-group:/aws/eks/contact-form-eks/cluster",
+        "arn:aws:logs:ap-southeast-1:203888389134:log-group:/aws/rds/instance/contact-form-postgres/postgresql",
+        "arn:aws:logs:ap-southeast-1:203888389134:log-group:/aws/rds/instance/contact-form-postgres/upgrade"
+      ]
+    }
+  ]
+}
