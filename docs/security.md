@@ -1,6 +1,6 @@
 # Security controls and evidence
 
-**Status, 27 September 2026:** The Terraform state bucket and foundation stage 01 (Route 53 zone, evidence bucket, and three seven-day log groups) have been applied and directly verified. The controls below describe the intended runtime configuration and how to test it. Config, Security Hub, CloudTrail, EKS, RDS, and the ALB have not been deployed by this project. No Security Hub finding is recorded as passed, failed, or remediated without a dated AWS result.
+**Status, 28 September 2026:** The Terraform state bucket and foundation stages 01–03 remain applied. AWS Config reported the `contact-form-recorder` recording with `SUCCESS`; CloudTrail reported logging without a delivery error; and the AWS Foundational Security Best Practices subscription reported `READY`. The disposable workload was partially deployed: direct reads verified a private EKS API, successful TLS-verifying workstation access through the private SSM relay, a private encrypted Multi-AZ PostgreSQL RDS instance, its RDS-managed master-secret ARN, and an image pushed to private ECR. EKS managed node-group creation stopped on an IAM service-role read denial, so no workers, Flask pods, or ALB were deployed. The partial workload was then torn down. Terraform now tracks no workload resources; direct AWS reads show no project VPC, active NAT gateway, Elastic IP, active EC2 instance, tagged EBS volume, RDS instance, or ALB. The full residual checker is inconclusive because `ec2:DescribeSnapshots` is denied. Security Hub findings were not captured or classified, so no control is claimed as passed or remediated. The table below describes the intended runtime configuration and the evidence still needed from a successful redeployment.
 
 ## Access and data paths
 
@@ -17,6 +17,12 @@
 | State/evidence | Bootstrap state bucket: SSE-S3, versioning, public-access block, bucket-owner enforcement, TLS-only policy. Foundation evidence bucket was applied with analogous controls; versioned service logs have 30-day current and noncurrent expiry rules plus expired-marker cleanup | Direct S3 settings, [ALB log verification](#alb-access-log-verification), and Terraform drift check |
 
 The ALB-to-pod connection is HTTP inside the VPC. The worker security group has a self-referencing all-protocol ingress rule for node/pod communication, plus port 8000 from the ALB; RDS accepts port 5432 from that same shared worker group. Security groups therefore limit traffic to these groups, but do not isolate Flask from every other workload on those nodes. SQL credentials and Kubernetes workload placement supply separate boundaries. EKS also creates a cluster security group; inspect all effective rules and pod ENIs live. Nodes have outbound `0.0.0.0/0` through NAT for ECR, AWS APIs and updates; this broad egress remains an exception. The controller's scoped inline policy removes security-group mutation actions, but needs live simulation and reconciliation. The local deployer has cluster administrator access for this short assignment, broader than a routine operator role.
+
+## Partial deployment cleanup evidence
+
+On 28 September, the first workload was destroyed before any node group, Flask pod or ALB was created. Terraform's deletion waiters lost read access late in EKS add-on and cluster deletion. Obsolete state entries were removed after the add-on list became empty and the cluster's network interfaces were absent; the project VPC was subsequently deleted. Both NAT gateways were deleted. Their Elastic IPs became unassociated and were released by exact allocation ID after Terraform's release path was denied `ec2:DisassociateAddress`.
+
+The workload state now lists no managed resources. Direct regional reads returned empty project inventories for VPCs, active NAT gateways, Elastic IPs, active EC2 instances, tagged EBS volumes, RDS instances and ALBs. The workload KMS key is `PendingDeletion`, scheduled for 5 October 2026. The full residual checker stopped at a denied `ec2:DescribeSnapshots` call; RDS automated-backup and Secrets Manager inventory reads were also denied. These gaps require a temporary read-only inventory grant or an equivalent account-level check before claiming complete cleanup or a zero-charge account. The retained state bucket, DNS, logs, Config, CloudTrail and Security Hub are separate from workload teardown.
 
 ## Foundational controls
 
@@ -62,7 +68,7 @@ The `service-logs/` lifecycle rule expires current versions after 30 days and no
 
 | Control / resource | Observed status and time | Remediation | Retest status and time |
 | --- | --- | --- | --- |
-| Pending first deployment | Not evaluated | Capture actual Singapore findings after Config and FSBP run | Pending |
+| Workload controls after partial deployment | FSBP subscription `READY`; no project control finding captured before teardown | Capture dated findings after a successful redeployment | Pending |
 
 Do not replace the pending row with guessed results. Findings elsewhere in the account must be attributed to their actual resources and owners, rather than claimed as project results.
 
