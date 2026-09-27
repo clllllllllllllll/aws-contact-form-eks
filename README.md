@@ -2,7 +2,9 @@
 
 A Flask contact form for name, email, and message. PostgreSQL on Amazon RDS stores submissions; Amazon EKS runs the app. Terraform owns the AWS infrastructure, and Ansible owns the Kubernetes deployment.
 
-**Status (27 September 2026):** The Flask form, PostgreSQL schema, and Docker image were verified locally; an earlier 13 application tests passed and a browser submission reached local PostgreSQL. The combined workstation/helper suite passed 30 offline tests on 27 September. The Terraform state bucket and foundation stage 01 (Route 53 zone, evidence bucket, and three seven-day log groups) are applied in AWS. Later foundation stages, workload Terraform, and Ansible remain untested in AWS. This project has not deployed EKS, RDS, or an ALB.
+**Status (27 September 2026):** The Flask form, PostgreSQL schema, and Docker image were verified locally; an earlier 13 application tests passed and a browser submission reached local PostgreSQL. The combined workstation/helper suite passed 30 offline tests. The Terraform state bucket and foundation stages 01–03 are applied in AWS: Route 53 delegation is verified, the ACM certificate is `ISSUED`, AWS Config is recording, CloudTrail is logging, and Security Hub FSBP is `READY`. The approved first workload target added only `aws_kms_key.eks` and `aws_secretsmanager_secret.app` (two creates, zero changes or destroys); workload S3 state contains the key and application-secret metadata. The user confirmed the temporary `ContactFormWorkloadBootstrapTemporary` policy was detached from `contact-form-deployer` and deleted on 27 September. No EKS, RDS, NAT gateway, or ALB has been deployed; Ansible deployment remains pending.
+
+**Cluster target plan attempt (27 September 2026):** A read-only plan for `aws_eks_cluster.main` failed because `contact-form-deployer` lacked `kms:DescribeKey` after the temporary bootstrap policy was removed. Terraform printed a partial 19-create proposal but exited 1, so it produced no valid approved plan. The mode-600 plan file left by the failed attempt was deleted. Remote workload state still contains only `aws_kms_key.eks` and `aws_secretsmanager_secret.app`; no cluster, NAT gateway, EC2 instance, or RDS instance was created. Validate and attach the exact-key KMS grant, then generate a fresh successful plan and review its cost before seeking separate apply approval.
 
 ## Architecture
 
@@ -15,9 +17,9 @@ The environment is planned for `ap-southeast-1` across two Availability Zones (A
 - RDS PostgreSQL uses a Multi-AZ DB instance: one writer and one standby in separate private database subnets. The app connects to the writer endpoint, which can move after failover.
 - The EKS Kubernetes API is private. Ansible runs on the local workstation and reaches it through an AWS Systems Manager (SSM) tunnel and a private EC2 relay. The relay has no public IP or inbound SSH rule.
 - Terraform provisions the network, EKS, RDS, IAM, Secrets Manager, and supporting services. Ansible installs the AWS Load Balancer Controller and applies the Kubernetes Ingress. The controller creates **one** physical ALB; Terraform does not create a separate `aws_lb`.
-- The Route 53 hosted zone exists; registrar delegation and the ACM certificate are pending. Browser-to-ALB traffic will use HTTPS. ALB-to-pod traffic uses HTTP inside the VPC, restricted by security groups. Flask-to-RDS traffic must verify the RDS TLS certificate.
+- The Route 53 hosted zone is publicly delegated and the ACM certificate is `ISSUED`. Browser-to-ALB traffic will use HTTPS. ALB-to-pod traffic uses HTTP inside the VPC, restricted by security groups. Flask-to-RDS traffic must verify the RDS TLS certificate.
 
-Secrets Manager holds two kinds of database credentials: the RDS-managed master secret and a separate, restricted application credential. The Flask pods read only the application secret using an IAM role for their Kubernetes service account (IRSA). The diagram leaves Secrets Manager unconnected to keep the traffic path readable; access is through the workers' same-AZ NAT gateways unless a VPC endpoint is added.
+Secrets Manager will hold two kinds of database credentials: the RDS-managed master secret and a separate, restricted application credential. Only the application-secret metadata exists so far; the applied first target had no secret-version resource. The Flask pods read only the application secret using an IAM role for their Kubernetes service account (IRSA). The diagram leaves Secrets Manager unconnected to keep the traffic path readable; access is through the workers' same-AZ NAT gateways unless a VPC endpoint is added.
 
 ## Repository layout
 
@@ -30,14 +32,14 @@ Present now:
 | `docs/architecture.png` | High-level architecture diagram |
 | `docs/security.md` | Planned controls, evidence commands, actual-findings register, and demo exceptions; dated screenshots will be added after live checks |
 | `app/` | Flask form, SQL schema, Docker image, local Makefile, and integration tests; verified locally |
-| `terraform/bootstrap/`, `terraform/foundation/`, `terraform/workload/` | Applied state-bucket bootstrap; foundation and workload are locally validated drafts; neither is applied |
+| `terraform/bootstrap/`, `terraform/foundation/`, `terraform/workload/` | Applied state-bucket bootstrap and foundation stages 01–03; workload first target applied, with remaining runtime resources pending |
 | `terraform/policies/` | Operator IAM policy drafts for manual review; see [policy notes](terraform/policies/README.md) |
 | `terraform/README.md`, `ansible/README.md` | Terraform backend/stage instructions and Kubernetes deployment/cleanup commands |
 | `ansible/` | Draft deploy/cleanup playbooks and manifests; locally syntax checked |
 | `scripts/` | Draft tunnel, image publishing and ALB/DNS helpers |
 | `.gitignore` | Excludes local secrets, state, plans, and generated files |
 
-Foundation stage 01 is applied and verified; later stages are locally validated but untested in AWS. Workload Terraform is a locally validated draft, and Ansible is drafted but untested against EKS.
+Foundation stages 01–03 and the two-resource workload first target are applied and verified as described above. The remaining workload Terraform and Ansible deployment are locally validated but untested against EKS.
 
 ## Prerequisites and cost gate
 
@@ -75,7 +77,7 @@ Never commit AWS credentials, Terraform state or plan files, kubeconfig, private
 
 ## Verified Terraform state bootstrap
 
-The non-root `contact-form-deployer` user in account `203888389134` created the state bucket `aws-contact-form-eks-tfstate-203888389134-ap-southeast-1` in Singapore. Terraform reported no drift after apply. Direct AWS checks returned versioning `Enabled`, all four public-access blocks `true`, default SSE-S3 encryption `AES256`, and `BucketOwnerEnforced` ownership. The bucket policy denies S3 requests when `aws:SecureTransport` is `false`. No foundation or workload state objects had been written at that verification; recheck both remote keys before live backend initialization.
+The non-root `contact-form-deployer` user in account `203888389134` created the state bucket `aws-contact-form-eks-tfstate-203888389134-ap-southeast-1` in Singapore. Terraform reported no drift after apply. Direct AWS checks returned versioning `Enabled`, all four public-access blocks `true`, default SSE-S3 encryption `AES256`, and `BucketOwnerEnforced` ownership. The bucket policy denies S3 requests when `aws:SecureTransport` is `false`. At the 26 September bucket verification, no foundation or workload state objects had been written; both S3 state keys now contain applied resources. Recheck their current versions before initialization on another workstation.
 
 For a fresh setup in this specific AWS account, attach the scoped `terraform/policies/bootstrap/bucket-setup-policy.json` and `terraform/policies/bootstrap/state-access-policy.json` as inline policies on an authorized non-root deployer before running:
 
@@ -97,17 +99,17 @@ Bootstrap state stays local at `terraform/bootstrap/terraform.tfstate` and is ex
 
 Run the commands below from the local WSL workstation. Keep the same Git revision and verified workload version file for a laptop rehearsal. The [Terraform instructions](terraform/README.md), [Ansible instructions](ansible/README.md), and [security evidence register](docs/security.md) give the stage-specific checks.
 
-This is the target order for the local-workstation deployment. Bootstrap is applied and verified; foundation Terraform is a locally validated draft; workload is a locally validated draft and Ansible is drafted but not deployed. Complete and test each remaining stage before using its apply or deployment commands. Review the actual plan and cost before each apply.
+This is the target order for the local-workstation deployment. Bootstrap and foundation stages 01–03 are applied; the first workload target is applied, while the cluster target, remaining workload and Ansible deployment are pending. Complete and test each remaining stage before using its apply or deployment commands. Review the actual plan and cost before each apply.
 
 1. **Build and test the app locally.** Start a local PostgreSQL instance, run the Flask tests, submit a test form, and query the saved row. Build the container and confirm it runs as a non-root user. Local development may use a separate local database credential; production credentials come from Secrets Manager.
 2. **Bootstrap remote Terraform state (done for this account).** The encrypted, versioned S3 bucket is ready for foundation/workload state and S3 lockfiles. Preserve the local bootstrap state securely. Do not put secrets in Terraform inputs or outputs.
-3. **Apply the persistent foundation.** Use `terraform/foundation/` for DNS, retained logs/evidence, and other resources intended to survive a demo teardown. `terraform/bootstrap/` owns the state bucket; foundation stores its own state there. Inspect existing account-wide security services before trying to manage them.
-4. **Bootstrap in two targets, then apply the runtime infrastructure.** A trusted administrator creates only `aws_kms_key.eks` and `aws_secretsmanager_secret.app` through a reviewed saved target plan, then binds their exact ARNs into scoped policies. With all four OIDC grants still inert at `id/BOOTSTRAP-PLACEHOLDER`, the deployer reviews a separate saved `-target=aws_eks_cluster.main` plan using the same verified variables. Inspect its VPC/NAT/role dependencies, update cost/credits and approve it separately; EKS billing starts on creation. Read the new issuer with `aws eks describe-cluster`; an administrator makes an ignored mode-600 `.local/deployer-iam-provisioning.json` from the tracked inert template, binds all four OIDC grants in that copy, validates/simulates and publishes/attaches only the copy. **Only then** does the deployer make a fresh full workload plan for the remaining workers, relay, RDS Multi-AZ instance, ECR, IAM roles, and security groups. Follow the [Terraform first-create procedure](terraform/README.md) and confirm outputs contain identifiers and endpoints, not secret values.
+3. **Apply the persistent foundation (done for this account).** Use `terraform/foundation/` for DNS, retained logs/evidence, and other resources intended to survive a demo teardown. `terraform/bootstrap/` owns the state bucket; foundation stores its own state there. Inspect existing account-wide security services before trying to manage them.
+4. **Bootstrap in two targets, then apply the runtime infrastructure.** The approved first target created only `aws_kms_key.eks` and `aws_secretsmanager_secret.app`; exact-ARN policy review copies are prepared but not attached. The user confirmed the temporary bootstrap policy was detached and deleted on 27 September. With all four OIDC grants still inert at `id/BOOTSTRAP-PLACEHOLDER`, validate and attach the exact-key KMS grant, then generate a fresh successful saved `-target=aws_eks_cluster.main` plan using the same verified variables. Inspect its VPC/NAT/role dependencies, update cost/credits and obtain separate approval before applying; EKS billing starts on creation. Read the new issuer with `aws eks describe-cluster`; an administrator makes an ignored mode-600 `.local/deployer-iam-provisioning.json` from the tracked inert template, binds all four OIDC grants in that copy, validates/simulates and publishes/attaches only the copy. **Only then** does the deployer make a fresh full workload plan for the remaining workers, relay, RDS Multi-AZ instance, ECR, IAM roles, and security groups. Follow the [Terraform first-create procedure](terraform/README.md) and confirm outputs contain identifiers and endpoints, not secret values.
 5. **Open the management tunnel.** Start an SSM port-forwarding session from the workstation through the private relay to the private EKS API. Use the tunnel-aware kubeconfig with TLS hostname verification intact. The drafted scripts/open_tunnel.py writes a TLS-verifying kubeconfig and forwards local port 8443. Verify `kubectl get nodes` before running Ansible.
 6. **Run Ansible locally.** The drafted `ansible/deploy.yml` builds and pushes an immutable image to private ECR, installs the pinned AWS Load Balancer Controller, and applies the namespace, service accounts, RBAC, database setup Job, Deployment, ClusterIP Service, and HTTPS Ingress. The setup Job creates the restricted app user and table on a fresh database; reruns reuse a completed Job or safely recreate a failed one while the setup script preserves credentials and rows. Ansible then waits for healthy ALB targets and creates the Route 53 alias.
 7. **Verify the site and security controls.** Submit synthetic data through HTTPS, query its row from a controlled client inside the VPC, and record the evidence listed below. Run Ansible again and check that it makes no unwanted changes.
 
-Bootstrap has been run and verified for this account. Check local and S3 state before live backend initialization. **The stage 01 commands below are for an empty foundation state only.** On a laptop with existing foundation state, initialize the reconciled backend, inspect `terraform -chdir=terraform/foundation state list` and `terraform -chdir=terraform/foundation output -json`, retain the latest applied stage and trail branch, and skip stages already applied. An earlier stage file sets later flags to `false` and can propose deletion. The [Terraform backend and RDS log-group state handoff](terraform/README.md#backend-initialization) gives the ownership gates; if workload state already tracks either RDS log group, resolve ownership before any apply. These commands are for future use after cost approval and valid AWS login:
+Bootstrap and foundation stages 01–03 have been run and verified for this account; workload S3 state contains the first target. Check local and S3 state before backend initialization on another workstation. **The stage 01 commands below are for an empty foundation state only.** On a laptop with existing foundation state, initialize the reconciled backend, inspect `terraform -chdir=terraform/foundation state list` and `terraform -chdir=terraform/foundation output -json`, retain the latest applied stage and trail branch, and skip stages already applied. An earlier stage file sets later flags to `false` and can propose deletion. The [Terraform backend and RDS log-group state handoff](terraform/README.md#backend-initialization) gives the ownership gates; if workload state already tracks either RDS log group, resolve ownership before any apply. These commands are for future use after cost approval and valid AWS login:
 
 ```bash
 export AWS_PROFILE=contact-form-deployer
@@ -124,7 +126,7 @@ After reviewing that saved plan and obtaining explicit approval for this paid ap
 terraform -chdir=terraform/foundation apply foundation.tfplan
 ```
 
-After stage 01, check the Route 53 nameservers and set them at the domain registrar. Inspect any existing account-wide services before choosing the stage 02 trail branch:
+For a fresh build, after stage 01, check the Route 53 nameservers and set them at the domain registrar. Stages 02 and 03 are already applied in this account; skip the following stage blocks on the current state. Inspect any existing account-wide services before choosing the stage 02 trail branch:
 
 ```bash
 terraform -chdir=terraform/foundation output -json name_servers
@@ -165,7 +167,7 @@ CERT_ARN="$(terraform -chdir=terraform/foundation output -raw certificate_arn)"
 aws acm describe-certificate --region ap-southeast-1 --certificate-arn "$CERT_ARN" --query 'Certificate.{domain:DomainName,status:Status,validation:DomainValidationOptions[*].ValidationStatus}'
 ```
 
-The certificate must report `ISSUED`. On a workstation with an already applied foundation, skip completed stages and retain the **latest applied** stage file; an earlier file can plan to disable later features. Before workload creation, use the [read-only preflight](terraform/workload/README.md) to choose currently compatible versions and check quota. On a first run, make a local candidate from the example, replace its invalid placeholders with verified Singapore versions and AMIs, then run:
+The certificate is `ISSUED` for this account. On a workstation with an already applied foundation, skip completed stages and retain the **latest applied** stage file; an earlier file can plan to disable later features. Before further workload creation or a fresh rebuild, use the [read-only preflight](terraform/workload/README.md) to choose currently compatible versions and check quota. On a first run, make a local candidate from the example, replace its invalid placeholders with verified Singapore versions and AMIs, then run:
 
 ```bash
 mkdir -p .local
@@ -183,7 +185,7 @@ terraform -chdir=terraform/workload init
 WORKLOAD_VARS="$PWD/.local/verified-workload.tfvars.json"
 ```
 
-Before a full workload plan, follow [both required target stages](terraform/README.md): after separate updated Singapore cost reviews and approvals, a trusted administrator creates the key and app-secret metadata and rebinds their exact ARNs, then the deployer applies the reviewed saved `aws_eks_cluster.main` target with OIDC grants still inert. Read the issuer through `aws eks describe-cluster`; the administrator makes the ignored mode-600 OIDC review copy from the inert template, binds the new exact ARN in all four statements there, and validates/simulates/publishes/attaches that copy. The full plan must be generated **after** these stages; the key, app secret and cluster already exist in workload state:
+Before a full workload plan, follow [both required target stages](terraform/README.md). The approved first target is already in workload S3 state: the key and app-secret metadata were the only two creates, and temporary bootstrap-policy removal was user-confirmed. Exact-ARN policy copies are prepared but still need live IAM validation/simulation and attachment. After the exact-key KMS grant is validated and attached, the deployer must generate a fresh successful saved `aws_eks_cluster.main` target plan with OIDC grants still inert, then review its cost and obtain separate apply approval; the failed partial plan is unusable. Read the issuer through `aws eks describe-cluster`; the administrator makes the ignored mode-600 OIDC review copy from the inert template, binds the new exact ARN in all four statements there, and validates/simulates/publishes/attaches that copy. The full plan must be generated **after** the cluster target; the key and app secret must remain in workload state without replacement. On a fresh rebuild, repeat both targets and regenerate the OIDC review copy before this full-plan command:
 
 ```bash
 terraform -chdir=terraform/workload plan -input=false -var-file="$WORKLOAD_VARS" -out=workload.tfplan
@@ -240,7 +242,7 @@ RDS generates and stores the master password in Secrets Manager. The app uses a 
 
 ## Planned security controls and evidence
 
-These are **design targets, not claims of enabled controls**. Record actual values and dates after deployment.
+These are **runtime design targets**. AWS Config recording, CloudTrail logging, and Security Hub FSBP `READY` were verified for the foundation on 27 September; record deployment-specific values and dates after the runtime is built.
 
 | Area | Target and verification |
 | --- | --- |
@@ -251,9 +253,9 @@ These are **design targets, not claims of enabled controls**. Record actual valu
 | Kubernetes | Two replicas in different AZs; non-root process, no privilege escalation, dropped capabilities, health checks, resource requests/limits, and RBAC. Confirm with deployed pod specs and node AZ labels. |
 | RDS and storage | Private, encrypted Multi-AZ RDS with backups during operation. Encrypt Terraform state and relevant logs; limit access to evidence and state buckets. |
 | Logging | Foundation retains EKS control-plane and RDS PostgreSQL/upgrade log groups for seven days. The Ingress requests ALB access logs in the evidence bucket under `service-logs/alb/`; verify a recent real `.log.gz` object through [metadata-only ALB log checks](docs/security.md#alb-access-log-verification), not just the test file. Review CloudTrail coverage without overwriting unrelated account configuration. |
-| Security findings | Enable AWS Foundational Security Best Practices (FSBP) in Security Hub with the required AWS Config recording. Save dated findings, fixes, and remaining exceptions. A control still awaiting evaluation is not a pass. |
+| Security findings | AWS Config is recording and Security Hub FSBP is `READY`; save dated findings, fixes, and remaining exceptions. A control still awaiting evaluation is not a pass. |
 
-FSBP is the selected AWS foundational standard for this assignment. Do not claim CIS certification or that a control passed until it has been checked. Security Hub and Config may already be configured in the account; inspect them before Terraform takes ownership. Findings can take time to appear.
+FSBP is the selected AWS foundational standard for this assignment. Do not claim CIS certification or that a control passed until it has been checked. Security Hub and Config are active in the applied foundation; inspect their account ownership before future changes. Findings can take time to appear.
 
 ## End-to-end verification
 
