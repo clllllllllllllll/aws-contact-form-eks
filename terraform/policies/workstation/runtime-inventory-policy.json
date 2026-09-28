@@ -16,6 +16,9 @@
         "rds:DescribeDBSnapshots",
         "rds:DescribeDBInstanceAutomatedBackups",
         "elasticloadbalancing:DescribeLoadBalancers",
+        "elasticloadbalancing:DescribeListeners",
+        "elasticloadbalancing:DescribeTargetGroups",
+        "elasticloadbalancing:DescribeTargetHealth",
         "elasticloadbalancing:DescribeTags",
         "ecr:DescribeRepositories",
         "secretsmanager:ListSecrets"
@@ -43,6 +46,23 @@
       "Effect": "Allow",
       "Action": ["kms:DescribeKey", "kms:ListResourceTags"],
       "Resource": "arn:aws:kms:ap-southeast-1:203888389134:key/*"
+    },
+    {
+      "Sid": "ReadProjectFoundationalFindings",
+      "Effect": "Allow",
+      "Action": "securityhub:GetFindings",
+      "Resource": "arn:aws:securityhub:ap-southeast-1:203888389134:hub/default"
+    },
+    {
+      "Sid": "ListProjectAlbAccessLogMetadata",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::aws-contact-form-evidence-203888389134-ap-southeast-1",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": "service-logs/alb/*"
+        }
+      }
     }
   ]
 }
