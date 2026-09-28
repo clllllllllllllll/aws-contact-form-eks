@@ -389,37 +389,66 @@
     - name: Wait for HTTPS readiness through the controller ALB
       ansible.builtin.command:
         argv:
-          - curl
-          - --fail
-          - --silent
-          - --show-error
-          - --max-time
-          - "10"
-          - --output
-          - /dev/null
-          - --write-out
-          - "%{http_code}"
-          - --connect-to
-          - "{{ tf.domain_name.value }}:443:{{ ingress_result.resources[0].status.loadBalancer.ingress[0].hostname }}:443"
-          - "https://{{ tf.domain_name.value }}/health/ready"
+          - "{{ ansible_playbook_python }}"
+          - -c
+          - &https_readiness_probe |
+              import ipaddress
+              import json
+              import subprocess
+              import sys
+              import urllib.parse
+              import urllib.request
+
+              dns_name, host_name = sys.argv[1:]
+              query = urllib.parse.urlencode({"name": dns_name, "type": "A"})
+              try:
+                  with urllib.request.urlopen(
+                      "https://dns.google/resolve?" + query, timeout=10
+                  ) as response:
+                      answer = json.load(response)
+                  if answer.get("Status") != 0:
+                      raise ValueError(f"DNS status {answer.get('Status')}")
+                  addresses = []
+                  for record in answer.get("Answer", []):
+                      if record.get("type") == 1:
+                          address = str(ipaddress.IPv4Address(record["data"]))
+                          if address not in addresses:
+                              addresses.append(address)
+                  if not addresses:
+                      raise ValueError("no A records yet")
+              except Exception as exc:
+                  print(f"DNS lookup for {dns_name} failed: {exc}", file=sys.stderr)
+                  sys.exit(1)
+
+              failures = []
+              for address in addresses:
+                  try:
+                      probe = subprocess.run(
+                          [
+                              "curl", "--fail", "--silent", "--show-error",
+                              "--noproxy", "*", "--max-time", "10",
+                              "--output", "/dev/null", "--write-out", "%{http_code}",
+                              "--resolve", f"{host_name}:443:{address}",
+                              f"https://{host_name}/health/ready",
+                          ],
+                          capture_output=True, text=True, timeout=12, check=False,
+                      )
+                  except (OSError, subprocess.TimeoutExpired) as exc:
+                      failures.append(f"{address}: {exc}")
+                      continue
+                  if probe.returncode == 0 and probe.stdout == "200":
+                      print("200")
+                      sys.exit(0)
+                  failures.append(
+                      f"{address}: curl exit {probe.returncode}, "
+                      f"HTTP {probe.stdout or '-'}, {probe.stderr.strip()}"
+                  )
+              print("; ".join(failures), file=sys.stderr)
+              sys.exit(1)
+          - "{{ ingress_result.resources[0].status.loadBalancer.ingress[0].hostname }}"
+          - "{{ tf.domain_name.value }}"
       register: website_result
       until: website_result.rc == 0 and website_result.stdout == '200'
-      retries: 60
-      delay: 10
-      changed_when: false
-
-    - name: Wait for the public domain to resolve
-      ansible.builtin.uri:
-        url: "https://dns.google/resolve?name={{ tf.domain_name.value }}&type=A"
-        method: GET
-        status_code: 200
-        return_content: true
-        validate_certs: true
-      register: public_dns_result
-      until: >-
-        public_dns_result.status | default(0) == 200 and
-        public_dns_result.json.Status | default(1) == 0 and
-        (public_dns_result.json.Answer | default([]) | selectattr('type', 'equalto', 1) | list | length) > 0
       retries: 60
       delay: 10
       changed_when: false
@@ -427,19 +456,11 @@
     - name: Verify HTTPS readiness through a publicly resolved address
       ansible.builtin.command:
         argv:
-          - curl
-          - --fail
-          - --silent
-          - --show-error
-          - --max-time
-          - "10"
-          - --output
-          - /dev/null
-          - --write-out
-          - "%{http_code}"
-          - --resolve
-          - "{{ tf.domain_name.value }}:443:{{ public_dns_result.json.Answer | selectattr('type', 'equalto', 1) | map(attribute='data') | first }}"
-          - "https://{{ tf.domain_name.value }}/health/ready"
+          - "{{ ansible_playbook_python }}"
+          - -c
+          - *https_readiness_probe
+          - "{{ tf.domain_name.value }}"
+          - "{{ tf.domain_name.value }}"
       register: public_website_result
       until: public_website_result.rc == 0 and public_website_result.stdout == '200'
       retries: 12
