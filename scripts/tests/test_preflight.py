@@ -150,6 +150,27 @@ class PreflightTests(unittest.TestCase):
         self.assertFalse(result["recommendation_drift"])
         ssm.get_parameter.assert_called_once_with(Name=recommended_path)
 
+    def test_pinned_current_version_reuses_recommended_parameter(self):
+        ec2, ssm, recommended_path = ami_clients()
+        current_response = ssm.get_parameter(Name=recommended_path)
+        current_response["Parameter"]["Version"] = 18
+        frozen_versions = dict(FROZEN_VERSIONS, node_ssm_parameter_version=18)
+        ssm.get_parameter.reset_mock()
+
+        def get_parameter(Name):
+            if Name == recommended_path:
+                return current_response
+            raise ClientError({"Error": {"Code": "ParameterVersionNotFound",
+                                         "Message": "version-qualified read unavailable"}},
+                              "GetParameter")
+
+        ssm.get_parameter.side_effect = get_parameter
+        result = preflight.check_amis(ec2, ssm, frozen_versions)
+        self.assertEqual(result["node_ssm_parameter_version"], 18)
+        self.assertEqual(result["node_ami"]["image_id"], NODE_AMI)
+        self.assertFalse(result["recommendation_drift"])
+        ssm.get_parameter.assert_called_once_with(Name=recommended_path)
+
     def test_pinned_node_release_remains_valid_after_recommendation_advances(self):
         ec2, ssm, recommended_path = ami_clients(
             current_release="1.33.13-20260801", current_version=8

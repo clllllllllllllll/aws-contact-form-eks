@@ -260,9 +260,10 @@ def check_amis(ec2, ssm, versions):
     recommended = json.loads(recommended_response["Value"])
     selected_response = recommended_response
     if "node_ssm_parameter_version" in versions:
-        selected_response = ssm.get_parameter(
-            Name=f"{recommended_path}:{versions['node_ssm_parameter_version']}"
-        )["Parameter"]
+        if recommended_response["Version"] != versions["node_ssm_parameter_version"]:
+            selected_response = ssm.get_parameter(
+                Name=f"{recommended_path}:{versions['node_ssm_parameter_version']}"
+            )["Parameter"]
         require(selected_response["Version"] == versions["node_ssm_parameter_version"],
                 "The selected SSM parameter version differs from the requested version.")
     selected = json.loads(selected_response["Value"])
