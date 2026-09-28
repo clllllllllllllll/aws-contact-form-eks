@@ -1,6 +1,6 @@
 # Security controls and evidence
 
-**Status, 28 September 2026:** The Terraform state bucket and foundation stages 01–03 remain applied. AWS Config reported the `contact-form-recorder` recording with `SUCCESS`; CloudTrail reported logging without a delivery error; and the AWS Foundational Security Best Practices subscription reported `READY`. The disposable workload was partially deployed: direct reads verified a private EKS API, successful TLS-verifying workstation access through the private SSM relay, a private encrypted Multi-AZ PostgreSQL RDS instance, its RDS-managed master-secret ARN, and an image pushed to private ECR. EKS managed node-group creation stopped on an IAM service-role read denial, so no workers, Flask pods, or ALB were deployed. The partial workload was then torn down. Terraform now tracks no workload resources; direct AWS reads show no project VPC, active NAT gateway, Elastic IP, active EC2 instance, tagged EBS volume, RDS instance, or ALB. The full residual checker is inconclusive because `ec2:DescribeSnapshots` is denied. Security Hub findings were not captured or classified, so no control is claimed as passed or remediated. The table below describes the intended runtime configuration and the evidence still needed from a successful redeployment.
+**Status, 28 September 2026:** The Terraform state bucket and foundation stages 01–03 remain applied. AWS Config reported the `contact-form-recorder` recording with `SUCCESS`; CloudTrail reported logging without a delivery error; and the AWS Foundational Security Best Practices subscription reported `READY`. A complete disposable workload was deployed and tested: two Ready EKS workers in separate Availability Zones, a private encrypted Multi-AZ PostgreSQL RDS instance, two Ready Flask replicas, and one controller-created ALB. The HTTPS health check returned `200`; a synthetic form submission reached `/thanks`, and an in-cluster readback Job found its row in RDS. A second Ansible deployment finished with `changed=0`. Ansible then removed the application entry points, and Terraform destroyed the workload. State is empty. Direct regional reads show no project VPC, allocated Elastic IP, EKS cluster, RDS instance, ALB or tagged EBS volume; NAT gateways are `deleted` and worker/relay instances are `terminated`. Snapshot, backup, ECR, secret and Security Hub findings reads were denied, so complete residual-cost and findings audits remain open. No individual FSBP control is claimed as passed or remediated.
 
 ## Access and data paths
 
@@ -18,7 +18,13 @@
 
 The ALB-to-pod connection is HTTP inside the VPC. The worker security group has a self-referencing all-protocol ingress rule for node/pod communication, plus port 8000 from the ALB; RDS accepts port 5432 from that same shared worker group. Security groups therefore limit traffic to these groups, but do not isolate Flask from every other workload on those nodes. SQL credentials and Kubernetes workload placement supply separate boundaries. EKS also creates a cluster security group; inspect all effective rules and pod ENIs live. Nodes have outbound `0.0.0.0/0` through NAT for ECR, AWS APIs and updates; this broad egress remains an exception. The controller's scoped inline policy removes security-group mutation actions, but needs live simulation and reconciliation. The local deployer has cluster administrator access for this short assignment, broader than a routine operator role.
 
-## Partial deployment cleanup evidence
+## Deployment and cleanup evidence
+
+The complete 28 September rehearsal used a private SSM tunnel to the EKS API. Kubernetes reported one Ready worker in each selected AZ and two Ready Flask pods. The public `https://cheelong.xyz/health/ready` endpoint returned `{"status":"ok"}` through the ALB with certificate validation; the workstation DNS cache was stale, so the check connected through the ALB hostname while retaining the public domain for TLS verification. A browser-style POST with a session cookie, CSRF token and same-origin referrer returned `200` at `/thanks`. The private readback Job returned row `id=1` for `demo@example.com`. No real customer data was used. A local, ignored verification note records the command results.
+
+Ansible removed the Route 53 alias and Ingress, waited for the controller to delete the ALB, and then removed the controller and application namespace. Terraform's first destroy applied all but two EIP deletions: the caller lacked `ec2:DisassociateAddress`. AWS had already disassociated both addresses when the NAT gateways were deleted. A fresh saved plan containing exactly those two EIP deletions released them, leaving no managed workload resources in Terraform state. Direct AWS reads confirmed the principal runtime resources are absent or terminated. The customer-managed EKS KMS key is `PendingDeletion`, scheduled for 5 October 2026. The state bucket and foundation services remain intentionally deployed.
+
+### Earlier partial deployment
 
 On 28 September, the first workload was destroyed before any node group, Flask pod or ALB was created. Terraform's deletion waiters lost read access late in EKS add-on and cluster deletion. Obsolete state entries were removed after the add-on list became empty and the cluster's network interfaces were absent; the project VPC was subsequently deleted. Both NAT gateways were deleted. Their Elastic IPs became unassociated and were released by exact allocation ID after Terraform's release path was denied `ec2:DisassociateAddress`.
 
@@ -50,7 +56,7 @@ Record the command time, account, Region, control ID, resource ID, status and fi
 
 ## ALB access log verification
 
-The Ingress requests ALB access logs in the retained evidence bucket under `service-logs/alb/`. This is a local configuration draft; delivery is unverified until the ALB runs after cost approval. The bucket uses SSE-S3, public-access blocks, and a TLS-only policy. The log-delivery service can write only to the account path under that prefix from load balancers in the intended account and Region. [AWS access-log setup](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/enable-access-logging.html).
+The Ingress requests ALB access logs in the retained evidence bucket under `service-logs/alb/`. The ALB ran during the complete rehearsal, but a post-teardown listing was denied because `contact-form-deployer` lacks `s3:ListBucket` on the evidence bucket. Log-object delivery therefore remains unverified. The bucket uses SSE-S3, public-access blocks, and a TLS-only policy. The log-delivery service can write only to the account path under that prefix from load balancers in the intended account and Region. [AWS access-log setup](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/enable-access-logging.html).
 
 After sending only synthetic requests through the live HTTPS site, allow for delivery delay and list object metadata:
 
@@ -68,7 +74,11 @@ The `service-logs/` lifecycle rule expires current versions after 30 days and no
 
 | Control / resource | Observed status and time | Remediation | Retest status and time |
 | --- | --- | --- | --- |
-| Workload controls after partial deployment | FSBP subscription `READY`; no project control finding captured before teardown | Capture dated findings after a successful redeployment | Pending |
+| FSBP subscription | `READY` in ap-southeast-1 before the full rehearsal | No subscription change required | Individual control status not verified |
+| AWS Config rule compliance | Recorder reported `SUCCESS`; `config:DescribeComplianceByConfigRule` was denied to `contact-form-deployer` on 28 September | Obtain a scoped read grant or account-level screenshot and record dated rule results | Pending |
+| Workload findings | `securityhub:GetFindings` denied to `contact-form-deployer` on 28 September; no project finding captured | Obtain a scoped read grant or account-level screenshot, then record dated control IDs and statuses during the next deployment | Pending |
+| ALB access logs | `s3:ListBucket` on the retained evidence bucket was denied after teardown; log delivery was not confirmed | Obtain a scoped bucket-list grant, then inspect object metadata for the rehearsal window | Pending |
+| RDS.8 deletion protection | Terraform disabled deletion protection for the disposable database; no Security Hub finding was read | Keep the short-lived demo exception documented and compare it with the actual finding | Pending |
 
 Do not replace the pending row with guessed results. Findings elsewhere in the account must be attributed to their actual resources and owners, rather than claimed as project results.
 

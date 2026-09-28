@@ -386,14 +386,62 @@
       delay: 10
       changed_when: alias_result.rc == 0 and (alias_result.stdout | from_json).changed
 
-    - name: Wait for the public HTTPS readiness check
-      ansible.builtin.uri:
-        url: "https://{{ tf.domain_name.value }}/health/ready"
-        method: GET
-        status_code: 200
-        validate_certs: true
-        return_content: false
+    - name: Wait for HTTPS readiness through the controller ALB
+      ansible.builtin.command:
+        argv:
+          - curl
+          - --fail
+          - --silent
+          - --show-error
+          - --max-time
+          - "10"
+          - --output
+          - /dev/null
+          - --write-out
+          - "%{http_code}"
+          - --connect-to
+          - "{{ tf.domain_name.value }}:443:{{ ingress_result.resources[0].status.loadBalancer.ingress[0].hostname }}:443"
+          - "https://{{ tf.domain_name.value }}/health/ready"
       register: website_result
-      until: website_result.status | default(0) == 200
+      until: website_result.rc == 0 and website_result.stdout == '200'
       retries: 60
       delay: 10
+      changed_when: false
+
+    - name: Wait for the public domain to resolve
+      ansible.builtin.uri:
+        url: "https://dns.google/resolve?name={{ tf.domain_name.value }}&type=A"
+        method: GET
+        status_code: 200
+        return_content: true
+        validate_certs: true
+      register: public_dns_result
+      until: >-
+        public_dns_result.status | default(0) == 200 and
+        public_dns_result.json.Status | default(1) == 0 and
+        (public_dns_result.json.Answer | default([]) | selectattr('type', 'equalto', 1) | list | length) > 0
+      retries: 60
+      delay: 10
+      changed_when: false
+
+    - name: Verify HTTPS readiness through a publicly resolved address
+      ansible.builtin.command:
+        argv:
+          - curl
+          - --fail
+          - --silent
+          - --show-error
+          - --max-time
+          - "10"
+          - --output
+          - /dev/null
+          - --write-out
+          - "%{http_code}"
+          - --resolve
+          - "{{ tf.domain_name.value }}:443:{{ public_dns_result.json.Answer | selectattr('type', 'equalto', 1) | map(attribute='data') | first }}"
+          - "https://{{ tf.domain_name.value }}/health/ready"
+      register: public_website_result
+      until: public_website_result.rc == 0 and public_website_result.stdout == '200'
+      retries: 12
+      delay: 10
+      changed_when: false
