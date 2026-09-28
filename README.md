@@ -6,8 +6,6 @@ Deploy a Flask contact form from a local workstation. Amazon EKS runs the app, a
 
 The Ingress and AWS Load Balancer Controller create **one** public Application Load Balancer (ALB). Terraform does not create a separate ALB. Visitors use HTTPS; the ALB forwards to private Flask pods, which connect to private RDS with verified TLS. The Kubernetes API is private and is reached from the workstation through Systems Manager and a private relay. See [security controls and evidence](docs/security.md) for the actual boundaries, findings status, and demo exceptions.
 
-**Verified status, 28 September 2026:** A full workload deployed with two Ready EKS workers, two Ready Flask pods and one Ingress-created ALB. HTTPS returned `200`; a form POST reached `/thanks`, and controlled RDS readback showed submission `id=1`. An Ansible rerun reported `changed=0`. Teardown needed two Terraform plans: the first deleted 70 of 72 resources but both EIPs hit `ec2:DisassociateAddress` denial; NAT deletion had already disassociated them, and a fresh two-EIP plan released them. Workload state is empty; the state bucket and foundation stages 01–03 remain. This verifies the first end-to-end deployment and a two-step teardown, **not** a fresh rebuild or one-shot destroy. Security Hub `GetFindings` was denied, so findings remain unreviewed; residual inventory and actual costs still need checking.
-
 ## Prerequisites and cost gate
 
 This checkout is configured for account `203888389134`, Region `ap-southeast-1`, domain `cheelong.xyz`, and non-root CLI profile `contact-form-deployer`. Use WSL with AWS CLI, Terraform, Python, Docker, kubectl, Helm, PostgreSQL client tools, Ansible, and the Session Manager plugin. The domain must delegate to the Terraform-managed Route 53 zone, and the foundation's ACM certificate must be `ISSUED` before deploying the Ingress. Another account or domain requires reviewing the backend, IAM, DNS, and policy scopes.
@@ -109,11 +107,12 @@ The workload example contains deliberately invalid version placeholders. Choose 
 source "$HOME/.venvs/assignment/bin/activate"
 umask 077
 mkdir -p .local && chmod 700 .local
-cp terraform/workload/version-inputs.tfvars.json.example .local/workload-candidate.tfvars.json
+cp .local/verified-workload.tfvars.json .local/workload-candidate.tfvars.json
 chmod 600 .local/workload-candidate.tfvars.json
-${EDITOR:-nano} .local/workload-candidate.tfvars.json
 python3 scripts/preflight.py --profile "$AWS_PROFILE" --versions-file .local/workload-candidate.tfvars.json
 ```
+
+The command above rechecks the frozen inputs on this workstation. For an entirely new workstation without the ignored verified file, begin with [the version-input example](terraform/workload/version-inputs.tfvars.json.example), choose supported regional versions and AMIs, and run the same preflight. Do not commit the verified file.
 
 Continue only when preflight reports `READY`:
 
@@ -187,7 +186,22 @@ After reviewing this new plan and confirming it is within the approved scope and
 terraform -chdir=terraform/workload apply "$FULL_PLAN"
 ```
 
-Confirm the EKS cluster, two Ready workers in different AZs, private encrypted Multi-AZ RDS, and non-secret Terraform outputs before deploying. Verify the new relay's Name and ownership tags and use its current Terraform output for the tunnel; the helper policy version stays unchanged. The app's restricted SQL credential is created by the Ansible database setup Job; RDS manages the separate master secret. Separate IAM roles for Kubernetes service accounts give Flask access only to the app secret and the setup Job access to the master secret. Terraform outputs ARNs, not passwords.
+Before Ansible, show the created infrastructure and both secret identities without reading secret values:
+
+```bash
+aws eks describe-cluster --region ap-southeast-1 --name contact-form-eks \
+  --query 'cluster.{status:status,public:resourcesVpcConfig.endpointPublicAccess,private:resourcesVpcConfig.endpointPrivateAccess}'
+aws eks list-nodegroups --region ap-southeast-1 --cluster-name contact-form-eks
+aws rds describe-db-instances --region ap-southeast-1 --db-instance-identifier contact-form-postgres \
+  --query 'DBInstances[0].{status:DBInstanceStatus,engine:Engine,public:PubliclyAccessible,multiAZ:MultiAZ,encrypted:StorageEncrypted}'
+aws rds describe-db-instances --region ap-southeast-1 --db-instance-identifier contact-form-postgres \
+  --query 'DBInstances[0].MasterUserSecret.{arn:SecretArn,status:SecretStatus}'
+aws secretsmanager describe-secret --region ap-southeast-1 \
+  --secret-id "$(terraform -chdir=terraform/workload output -raw app_secret_arn)" \
+  --query '{name:Name,arn:ARN}'
+```
+
+The RDS API shows the active RDS-managed master secret; the deployer cannot directly describe or read that master secret. The app's restricted SQL credential is created by the Ansible database setup Job in the next phase. Verify the new relay's tags and use its current Terraform output for the tunnel. Separate Kubernetes service-account IAM roles give Flask access only to the app secret and the setup Job access to the master secret.
 
 ## 3. Deploy through the private EKS API
 
@@ -209,27 +223,18 @@ cd /home/limch/projects/aws-contact-form-eks
 source "$HOME/.venvs/assignment/bin/activate"
 export AWS_PROFILE=contact-form-deployer
 export KUBECONFIG="$PWD/.local/kubeconfig"
-kubectl get nodes -L topology.kubernetes.io/zone
+kubectl --request-timeout=8s get nodes -L topology.kubernetes.io/zone
 ansible-playbook -i ansible/inventory.ini ansible/deploy.yml
 ```
 
 ## 4. Verify the application and security evidence
 
-Inspect live infrastructure metadata without reading secret values:
+Inspect the live application, Ingress and public endpoint:
 
 ```bash
-aws eks describe-cluster --region ap-southeast-1 --name contact-form-eks \
-  --query 'cluster.{status:status,public:resourcesVpcConfig.endpointPublicAccess,private:resourcesVpcConfig.endpointPrivateAccess}'
-aws eks list-nodegroups --region ap-southeast-1 --cluster-name contact-form-eks
-aws rds describe-db-instances --region ap-southeast-1 --db-instance-identifier contact-form-postgres \
-  --query 'DBInstances[0].{status:DBInstanceStatus,public:PubliclyAccessible,multiAZ:MultiAZ,encrypted:StorageEncrypted}'
-aws secretsmanager describe-secret --region ap-southeast-1 \
-  --secret-id "$(terraform -chdir=terraform/workload output -raw app_secret_arn)" \
-  --query '{name:Name,arn:ARN}'
-aws secretsmanager describe-secret --region ap-southeast-1 \
-  --secret-id "$(terraform -chdir=terraform/workload output -raw rds_master_secret_arn)" \
-  --query '{name:Name,arn:ARN}'
 kubectl -n contact-form get deployment,pods,service,ingress -o wide
+kubectl -n contact-form describe ingress contact-form
+curl --head --max-time 15 http://cheelong.xyz/
 curl --fail --silent --show-error https://cheelong.xyz/health/ready
 ```
 
@@ -240,7 +245,7 @@ ansible-playbook -i ansible/inventory.ini ansible/verify.yml -e demo_email=demo@
 ansible-playbook -i ansible/inventory.ini ansible/deploy.yml
 ```
 
-The 28 September Ansible rerun reported `changed=0`, and the live form submission and RDS readback succeeded. On a fresh rebuild, check credential reuse and row persistence during same-database reruns, plus Terraform plan drift. Record EKS/RDS/ALB settings, pod AZ placement, log delivery, Config and Security Hub FSBP findings with timestamps in [docs/security.md](docs/security.md). `READY` for a standard is not a passing control; `GetFindings` was denied, so findings and remaining security-control results are pending.
+An unchanged Ansible rerun should report `changed=0`. Check credential reuse and row persistence while the same RDS database exists. Record EKS/RDS/ALB settings, pod placement, log delivery, Config and actual Security Hub FSBP findings with timestamps in [security.md](docs/security.md). A `READY` standard subscription is not a passing control. The [read-only evidence policy](terraform/policies/README.md#read-only-demo-evidence-grant) is saved as a group inline policy. Current retained-resource findings are classified in `security.md`; the next live deployment still needs current EKS/RDS findings captured before teardown.
 
 ## 5. Ordered workload teardown
 
@@ -271,10 +276,10 @@ terraform -chdir=terraform/workload apply "$DESTROY_PLAN"
 If a destroy waiter fails after AWS has already deleted a resource, use the [guarded partial-destroy recovery](terraform/workload/README.md#recovery-after-a-partial-destroy). Verify actual absence before reconciling state or releasing an exact project EIP; do not treat an access denial as proof of deletion. After Terraform completes, run the read-only residual inventory:
 
 ```bash
-python3 scripts/check_residual.py --profile contact-form-deployer
+"$HOME/.venvs/assignment/bin/python" scripts/check_residual.py --profile contact-form-deployer
 ```
 
-A full workload destroy deletes RDS and its demo submissions, EKS, NAT gateways, runtime secrets, and ECR; KMS deletion can remain scheduled. The residual checker returns `0` only for no actionable resources in its declared scope, `2` for found resources, and `1` when a read fails. The last check was inconclusive because `ec2:DescribeSnapshots` was denied: resolve that read or inspect snapshots separately before calling cleanup complete. Check retained RDS backups, EBS assets, and actual Billing separately. For another session, use **new plans, a current costed approval, current Terraform resource outputs, and the same ordered deploy/teardown sequence**. The reusable IAM policy versions need no generated-ID edits.
+A full workload destroy deletes RDS and its demo submissions, EKS, NAT gateways, runtime secrets, and ECR; KMS deletion can remain scheduled. The residual checker returns `0` only for no actionable resources in its declared scope, `2` for found resources, and `1` when a read fails. Its latest complete read found no actionable workload resources under the project's names and tags; three project KMS keys were pending deletion. Check actual Billing separately because retained foundation and other resources remain outside this result. For another session, use **new plans, a current costed approval, current Terraform resource outputs, and the same ordered deploy/teardown sequence**. The reusable IAM policy versions need no generated-ID edits.
 
 ## Final cleanup of retained resources
 

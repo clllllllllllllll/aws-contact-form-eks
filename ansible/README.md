@@ -1,6 +1,6 @@
 # Kubernetes deployment
 
-These playbooks are drafted and pass local syntax checks. They have not yet been run against EKS. The AWS resources and cheelong.xyz certificate must exist before deployment. Use only synthetic submissions.
+The 28 September deployment produced two Ready Flask pods and one Ingress-created ALB. A synthetic browser submission was read back from private RDS, an unchanged Ansible rerun reported `changed=0`, and the teardown playbook removed the Ingress and ALB before Terraform destroyed the workload. A fresh rebuild remains to be rehearsed. The AWS resources and `cheelong.xyz` certificate must exist before deployment. Use only synthetic submissions.
 
 ## Workstation sequence
 
@@ -11,7 +11,7 @@ Activate the existing virtualenv and confirm the intended account. On another wo
     export AWS_PROFILE=contact-form-deployer
     aws sts get-caller-identity --profile "$AWS_PROFILE"
 
-The identity check must show account 203888389134 and a non-root principal. Before image publication, tunnel start or alias changes, have an administrator complete the [helper permission window](../scripts/README.md#helper-permission-window), including exact hosted-zone ARN binding, policy validation/simulation and attachment. The separate Terraform state-access policy may also be needed for output reads. The helper policy and live Session Manager document check have not been tested.
+The identity check must show account 203888389134 and a non-root principal. Before image publication, tunnel start or alias changes, confirm the [helper permission window](../scripts/README.md#helper-permission-window), including the current hosted-zone scope and attachment. The separate Terraform state-access policy is also needed for output reads. The helper policy supported image publication, the private Session Manager tunnel and the Route 53 alias in the 28 September deployment; recheck effective access before a new build.
 
 In terminal 1, start the private API tunnel:
 
@@ -45,7 +45,7 @@ Keep the SSM tunnel running. Stop sending form submissions, then run:
 
 The playbook verifies the account, deletes only an alias pointing to this controller-owned ALB, removes the Ingress, and waits for ALB deletion. It then removes the controller and application namespace. Review the Terraform destroy plan before running `terraform -chdir=terraform/workload apply workload-destroy.tfplan`. The saved plan contains the verified version inputs. A full workload destroy intentionally deletes RDS and demo submissions; the state bucket and foundation remain.
 
-The DNS helper saves a non-secret ownership record at .local/alb-alias.json. That record lets cleanup remove this exact alias if the ALB has already disappeared; an unrelated record is rejected. Keep the record on the workstation that deployed the site until cleanup is complete. If ALB deletion does not complete, the playbook stops. Investigate the controller and AWS resource state before destroying EKS or the VPC. After workload destroy, run `python3 scripts/check_residual.py --profile contact-form-deployer`. Exit 0 reports no actionable remnants within the checker's named/tagged Singapore scope; `PendingDeletion` workload KMS keys appear separately in `expected_pending_cleanup`. Exit 2 lists actionable remnants; exit 1 means an inventory call failed. Other accounts/Regions and resources outside its names and tags, including some untagged or manual assets, are outside scope; exit 0 is not a zero-bill claim. Review [residual inventory and retained costs](../scripts/README.md#residual-inventory-and-retained-costs) before any final foundation or backend removal. The 28 September cleanup removed the alias, Ingress and ALB before Terraform destroy; the residual inventory was inconclusive because a snapshot read was denied.
+The DNS helper saves a non-secret ownership record at .local/alb-alias.json. That record lets cleanup remove this exact alias if the ALB has already disappeared; an unrelated record is rejected. Keep the record on the workstation that deployed the site until cleanup is complete. If ALB deletion does not complete, the playbook stops. Investigate the controller and AWS resource state before destroying EKS or the VPC. After workload destroy, run `python3 scripts/check_residual.py --profile contact-form-deployer` from the assignment virtualenv. Exit 0 reports no actionable remnants within the checker's named/tagged Singapore scope; `PendingDeletion` workload KMS keys appear separately in `expected_pending_cleanup`. Exit 2 lists actionable remnants; exit 1 means an inventory call failed. Other accounts/Regions and resources outside its names and tags, including some untagged or manual assets, are outside scope; exit 0 is not a zero-bill claim. Review [residual inventory and retained costs](../scripts/README.md#residual-inventory-and-retained-costs) before any final foundation or backend removal. The 28 September cleanup removed the alias, Ingress and ALB before Terraform destroy; a later scoped read grant allowed a complete inventory with no actionable workload resources observed.
 
 ## Ownership and security
 
