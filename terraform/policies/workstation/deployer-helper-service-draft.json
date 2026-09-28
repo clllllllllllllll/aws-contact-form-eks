@@ -24,11 +24,18 @@
       "Condition": {"StringEquals": {"aws:RequestedRegion": "ap-southeast-1"}}
     },
     {
-      "Sid": "StartSessionOnCurrentRelayOnly",
+      "Sid": "StartSessionOnOwnedRelay",
       "Effect": "Allow",
       "Action": "ssm:StartSession",
-      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:instance/i-BOOTSTRAP-PLACEHOLDER",
+      "Resource": "arn:aws:ec2:ap-southeast-1:203888389134:instance/*",
       "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-southeast-1",
+          "ssm:resourceTag/Name": "contact-form-ssm-relay",
+          "ssm:resourceTag/Project": "aws-contact-form-eks",
+          "ssm:resourceTag/ManagedBy": "Terraform",
+          "ssm:resourceTag/Lifecycle": "workload"
+        },
         "BoolIfExists": {"ssm:SessionDocumentAccessCheck": "true"}
       }
     },
@@ -65,13 +72,13 @@
       "Sid": "ReadAliasInHostedZone",
       "Effect": "Allow",
       "Action": "route53:ListResourceRecordSets",
-      "Resource": "arn:aws:route53:::hostedzone/*"
+      "Resource": "arn:aws:route53:::hostedzone/Z0153068M1DZTUZ2CE23"
     },
     {
       "Sid": "ChangeOnlyApexARecord",
       "Effect": "Allow",
       "Action": "route53:ChangeResourceRecordSets",
-      "Resource": "arn:aws:route53:::hostedzone/*",
+      "Resource": "arn:aws:route53:::hostedzone/Z0153068M1DZTUZ2CE23",
       "Condition": {
         "ForAllValues:StringEquals": {
           "route53:ChangeResourceRecordSetsNormalizedRecordNames": ["cheelong.xyz"],

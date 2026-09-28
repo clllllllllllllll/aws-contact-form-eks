@@ -136,6 +136,7 @@
         "ec2:DeleteInternetGateway",
         "ec2:ModifySubnetAttribute",
         "ec2:DeleteSubnet",
+        "ec2:DisassociateAddress",
         "ec2:ReleaseAddress",
         "ec2:DeleteNatGateway",
         "ec2:DeleteRouteTable",

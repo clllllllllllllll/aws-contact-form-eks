@@ -6,7 +6,7 @@ Deploy a Flask contact form from a local workstation. Amazon EKS runs the app, a
 
 The Ingress and AWS Load Balancer Controller create **one** public Application Load Balancer (ALB). Terraform does not create a separate ALB. Visitors use HTTPS; the ALB forwards to private Flask pods, which connect to private RDS with verified TLS. The Kubernetes API is private and is reached from the workstation through Systems Manager and a private relay. See [security controls and evidence](docs/security.md) for the actual boundaries, findings status, and demo exceptions.
 
-**Verified status, 28 September 2026:** The app, database schema, and container passed local checks. The Terraform state bucket and foundation stages 01–03 are retained. An initial workload created a private EKS cluster, private Multi-AZ RDS, ECR image, and SSM relay; TLS-verified access to the private EKS API worked. Managed node groups failed on an IAM role lookup, so Flask pods and the ALB were never deployed. The partial workload was destroyed. Terraform now tracks no workload resources, and direct reads found no project VPC, active NAT gateway, Elastic IP, active EC2 instance, tagged EBS volume, RDS instance, or ALB. The residual check is **incomplete** because `ec2:DescribeSnapshots` was denied. No AWS form submission, full rebuild, or end-to-end demo has been verified.
+**Verified status, 28 September 2026:** A full workload deployed with two Ready EKS workers, two Ready Flask pods and one Ingress-created ALB. HTTPS returned `200`; a form POST reached `/thanks`, and controlled RDS readback showed submission `id=1`. An Ansible rerun reported `changed=0`. Teardown needed two Terraform plans: the first deleted 70 of 72 resources but both EIPs hit `ec2:DisassociateAddress` denial; NAT deletion had already disassociated them, and a fresh two-EIP plan released them. Workload state is empty; the state bucket and foundation stages 01–03 remain. This verifies the first end-to-end deployment and a two-step teardown, **not** a fresh rebuild or one-shot destroy. Security Hub `GetFindings` was denied, so findings remain unreviewed; residual inventory and actual costs still need checking.
 
 ## Prerequisites and cost gate
 
@@ -35,11 +35,11 @@ python -m pip install --no-cache-dir -r requirements-workstation.txt
 ansible-galaxy collection install -r ansible/requirements.yml
 ```
 
-The full workload deployment and teardown have **already been approved** within the costed scope discussed with the owner. Before a paid apply, inspect its fresh saved plan, current Singapore prices, credits, quota, expected runtime, and teardown steps. Continue under that approval when the plan remains within its resource scope and allowance; seek renewed approval only if a new plan or estimate exceeds either. The earlier planning estimate for a fully running stack was **US$0.50–1.00 per hour**, with a **US$10–20 allowance** for under ten total hours across setup, rehearsals, and demo, before credits and variable charges. Reprice before use; these are not quotes or limits. A configured **US$10 budget** and **US$5 actual-cost email alert** notify but do **not** stop spending. EKS, two NAT gateways, public IPv4, workers, Multi-AZ RDS, ALB, logs, and data transfer drive cost. The state bucket, DNS, evidence storage, logs, and security services can continue to cost money after workload teardown.
+The 28 September workload deployment and teardown were approved and completed. Before **each new paid deployment**, inspect its fresh saved plan, current Singapore prices, credits, quota, expected runtime, and teardown steps; present the estimate and obtain the owner's confirmation. The earlier planning estimate for a fully running stack was **US$0.50–1.00 per hour**, with a **US$10–20 allowance** for under ten total hours across setup, rehearsals, and demo, before credits and variable charges. Reprice before use; these are not quotes or limits. A configured **US$10 budget** and **US$5 actual-cost email alert** notify but do **not** stop spending. EKS, two NAT gateways, public IPv4, workers, Multi-AZ RDS, ALB, logs, and data transfer drive cost. The state bucket, DNS, evidence storage, logs, and security services can continue to cost money after workload teardown.
 
 ### IAM and service policy windows
 
-IAM files under [terraform/policies/](terraform/policies/README.md) are **manual account-access prerequisites**; committing them does not attach them. An administrator must review the published default versions, effective grants, attachment slots, and any boundary or account policy. The temporary first-target grant, named workload service policies, `ContactFormIAMProvisioning`, and short-lived `ContactFormIAMRoleWrites` grant are described in the [Terraform runbook](terraform/README.md#iam-and-service-policy-windows). The workstation helper and residual-inventory policies have separate windows. An IAM denial is a stop-and-review point, not a reason to grant broad access. A new cluster and relay generate new identifiers, so their exact-ARN policies must be rebound on each rebuild. This IAM Console step means a rebuild is **not yet unattended** from an empty account.
+IAM files under [terraform/policies/](terraform/policies/README.md) are **manual account-access prerequisites**; committing them does not attach them. An administrator must review the published default versions, effective grants, attachment slots, and any boundary or account policy. The temporary first-target grant, named workload service policies, `ContactFormIAMProvisioning`, and short-lived `ContactFormIAMRoleWrites` grant are described in the [Terraform runbook](terraform/README.md#iam-and-service-policy-windows). The workstation helper and residual-inventory policies have separate windows. An IAM denial is a stop-and-review point, not a reason to grant broad access. An administrator must publish the reviewed reusable policy versions once to replace copies bound to destroyed IDs. Future workload rebuilds need fresh plans and short attachment windows, but no generated-ID edits or per-run policy-version changes. The temporary key/secret creation grant remains a deliberate first-target window.
 
 Keep `.local/` plans, verified version inputs, policy copies, kubeconfig, and alias ownership records private and out of Git. Do not put passwords, access keys, Terraform state, or real contact submissions in the repository.
 
@@ -123,7 +123,7 @@ test -s "$WORKLOAD_VARS"
 terraform -chdir=terraform/workload init -input=false
 ```
 
-`READY` from preflight writes the verified file. Stop on `BLOCKED` or `INCOMPLETE`; do not use a previous file as proof of current readiness. Check workload state and the S3 backend before the first target. The two targets below are for a **new empty workload**; the 27 September plans must not be reused. The [two-target procedure](terraform/workload/README.md#two-target-first-creation-and-oidc-binding) gives the exact IAM policy windows and plan checks.
+`READY` from preflight writes the verified file. Stop on `BLOCKED` or `INCOMPLETE`; do not use a previous file as proof of current readiness. Check workload state and the S3 backend before the first target. The two targets below are for a **new empty workload**; the 27 September plans must not be reused. The [two-target procedure](terraform/workload/README.md#two-target-first-creation-and-repeatable-iam) gives the exact IAM policy windows and plan checks.
 
 Keep the same shell variables and verified input file through these Terraform stages. In a new terminal, set `AWS_PROFILE`, `AWS_REGION`, and `WORKLOAD_VARS` again before planning.
 
@@ -144,7 +144,7 @@ After reviewing the exact new plan and confirming it is within the approved scop
 terraform -chdir=terraform/workload apply "$FIRST_PLAN"
 ```
 
-An administrator then binds the **new exact KMS key ARN** and **app-secret ARN** in private reviewed policy copies, validates them, and publishes the required workload policy versions. Next, plan the cluster target. It can create paid network and EKS dependencies, including two NAT gateways, so review its full dependency list against the existing approval:
+After the temporary policy is detached, verify the new key and secret ARNs and ownership tags against state and live metadata. Confirm the reusable KMS, EKS and secret/ECR policy versions have been published; no ARN replacement is required. Next, plan the cluster target. It can create paid network and EKS dependencies, including two NAT gateways, so review its full dependency list against the costed approval for this deployment:
 
 ```bash
 CLUSTER_PLAN="$PWD/.local/workload-cluster.tfplan"
@@ -161,7 +161,7 @@ After reviewing this new plan and confirming it is within the approved scope and
 terraform -chdir=terraform/workload apply "$CLUSTER_PLAN"
 ```
 
-Read the cluster's **current** OIDC issuer; never reuse an issuer or policy from a destroyed cluster:
+Read and verify the cluster's **current** OIDC issuer; Terraform uses it in exact pod-role trust:
 
 ```bash
 CLUSTER_NAME="$(terraform -chdir=terraform/workload output -raw cluster_name)"
@@ -169,7 +169,7 @@ OIDC_ISSUER="$(aws eks describe-cluster --region "$AWS_REGION" --name "$CLUSTER_
 printf '%s\n' "$OIDC_ISSUER"
 ```
 
-Run the validated four-statement binding block in the [OIDC procedure](terraform/workload/README.md#two-target-first-creation-and-oidc-binding) to create `.local/deployer-iam-provisioning.json` from the inert tracked template. In the IAM Console, an administrator validates and publishes that exact live-issuer JSON as the **default** `ContactFormIAMProvisioning` version and confirms its attachment to `contact-form-deployer`. Confirm the other reviewed service and short-lived role-write grants before planning the rest of the workload. The recent failed node-group creation showed that `iam:GetRole` for the EKS node-group service role needs verification in the effective policy; check it before another paid apply.
+The published `ContactFormIAMProvisioning` version already covers this regional 32-character issuer ID. Check its default version and attachment, and confirm there is no pre-existing untagged provider on that issuer path. No policy copy or version change is needed. Confirm the other reviewed service and short-lived role-write grants before planning the rest of the workload. The recent failed node-group creation showed that `iam:GetRole` for the EKS node-group service role needs verification in the effective policy; check it before another paid apply.
 
 Only then create a **fresh full** plan. Review all proposed actions, especially worker count, private RDS settings, IAM, and any replacement or destroy action. Stop on an unexpected action or a cost estimate beyond the approved scope or allowance:
 
@@ -187,7 +187,7 @@ After reviewing this new plan and confirming it is within the approved scope and
 terraform -chdir=terraform/workload apply "$FULL_PLAN"
 ```
 
-Confirm the EKS cluster, two Ready workers in different AZs, private encrypted Multi-AZ RDS, and non-secret Terraform outputs before deploying. Rebind the workstation helper policy to the **new relay instance** before opening a tunnel. The app's restricted SQL credential is created by the Ansible database setup Job; RDS manages the separate master secret. Separate IAM roles for Kubernetes service accounts give Flask access only to the app secret and the setup Job access to the master secret. Terraform outputs ARNs, not passwords.
+Confirm the EKS cluster, two Ready workers in different AZs, private encrypted Multi-AZ RDS, and non-secret Terraform outputs before deploying. Verify the new relay's Name and ownership tags and use its current Terraform output for the tunnel; the helper policy version stays unchanged. The app's restricted SQL credential is created by the Ansible database setup Job; RDS manages the separate master secret. Separate IAM roles for Kubernetes service accounts give Flask access only to the app secret and the setup Job access to the master secret. Terraform outputs ARNs, not passwords.
 
 ## 3. Deploy through the private EKS API
 
@@ -240,7 +240,7 @@ ansible-playbook -i ansible/inventory.ini ansible/verify.yml -e demo_email=demo@
 ansible-playbook -i ansible/inventory.ini ansible/deploy.yml
 ```
 
-The second deployment checks repeatability and must preserve the database row and credential. Also review a fresh Terraform plan for drift. Record actual EKS/RDS/ALB settings, log delivery, Config and Security Hub FSBP findings with timestamps in [docs/security.md](docs/security.md). `READY` for a standard is not a passing control; pending or inaccessible findings must be reported as such. Do not claim HTTPS, ALB health, pod placement, database persistence, or security-control results until these live checks succeed.
+The 28 September Ansible rerun reported `changed=0`, and the live form submission and RDS readback succeeded. On a fresh rebuild, check credential reuse and row persistence during same-database reruns, plus Terraform plan drift. Record EKS/RDS/ALB settings, pod AZ placement, log delivery, Config and Security Hub FSBP findings with timestamps in [docs/security.md](docs/security.md). `READY` for a standard is not a passing control; `GetFindings` was denied, so findings and remaining security-control results are pending.
 
 ## 5. Ordered workload teardown
 
@@ -274,7 +274,7 @@ If a destroy waiter fails after AWS has already deleted a resource, use the [gua
 python3 scripts/check_residual.py --profile contact-form-deployer
 ```
 
-A full workload destroy deletes RDS and its demo submissions, EKS, NAT gateways, runtime secrets, and ECR; KMS deletion can remain scheduled. The residual checker returns `0` only for no actionable resources in its declared scope, `2` for found resources, and `1` when a read fails. The last check was inconclusive because `ec2:DescribeSnapshots` was denied: resolve that read or inspect snapshots separately before calling cleanup complete. Check retained RDS backups, EBS assets, and actual Billing separately. For another session, use **new plans, approval coverage checks, new resource identifiers, and the same ordered deploy/teardown sequence**.
+A full workload destroy deletes RDS and its demo submissions, EKS, NAT gateways, runtime secrets, and ECR; KMS deletion can remain scheduled. The residual checker returns `0` only for no actionable resources in its declared scope, `2` for found resources, and `1` when a read fails. The last check was inconclusive because `ec2:DescribeSnapshots` was denied: resolve that read or inspect snapshots separately before calling cleanup complete. Check retained RDS backups, EBS assets, and actual Billing separately. For another session, use **new plans, a current costed approval, current Terraform resource outputs, and the same ordered deploy/teardown sequence**. The reusable IAM policy versions need no generated-ID edits.
 
 ## Final cleanup of retained resources
 

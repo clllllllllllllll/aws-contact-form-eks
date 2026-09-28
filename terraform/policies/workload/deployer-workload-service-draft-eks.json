@@ -20,8 +20,8 @@
           "eks:bootstrapClusterCreatorAdminPermissions": "false",
           "eks:bootstrapSelfManagedAddons": "false"
         },
-        "ForAllValues:ArnEquals": {
-          "eks:encryptionConfigProviderKeyArns": "arn:aws:kms:ap-southeast-1:203888389134:key/00000000-0000-0000-0000-000000000000"
+        "ForAllValues:ArnLike": {
+          "eks:encryptionConfigProviderKeyArns": "arn:aws:kms:ap-southeast-1:203888389134:key/????????-????-????-????-????????????"
         },
         "Null": {
           "eks:encryptionConfigProviderKeyArns": "false"

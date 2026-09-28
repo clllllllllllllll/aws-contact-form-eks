@@ -1,6 +1,6 @@
 # Disposable workload
 
-**Current status (28 September 2026):** The first attempt partially created a private EKS cluster, private Multi-AZ RDS, two NAT gateways, a private SSM relay, ECR image, and supporting resources. The workstation reached the Kubernetes `/readyz` endpoint through the TLS-verifying tunnel. Both managed node groups failed before workers launched because the deployer could not read the EKS node-group service-linked role. No Flask pods or ALB were created. The partial workload was destroyed; Terraform now tracks no managed workload resources, and direct AWS reads returned empty project VPC, active NAT, Elastic IP, active EC2, tagged EBS volume, RDS and ALB inventories. The KMS key is `PendingDeletion` for 5 October. The full residual checker is inconclusive because `ec2:DescribeSnapshots` is denied. The state bucket and foundation remain. Before any rebuild, verify the corrected IAM grants, recheck the saved version inputs and cost, run the two first-creation targets, and bind the **new** cluster's OIDC issuer. The old issuer, kubeconfig and saved plans cannot be reused.
+**Current status (28 September 2026):** The earlier partial apply failed at the EKS node-group role lookup and was destroyed. Today's approved full deployment succeeded: two Ready workers and two Ready Flask pods, one Ingress-created ALB, HTTPS `200`, POST `/thanks`, RDS readback `id=1`, and an Ansible rerun with `changed=0`. Teardown was completed in two Terraform plans: the first deleted 70 of 72 resources and failed to disassociate both EIPs; NAT deletion had already removed their associations, and a fresh two-EIP plan released them. Workload state is empty. The state bucket and foundation remain. This does not verify a one-shot destroy, a fresh rebuild, complete residual inventory or Security Hub findings (`GetFindings` was denied). Before another paid build, verify the reusable IAM policy publications, effective permissions, fresh version inputs, state and cost. Old plans and kubeconfig cannot be reused.
 
 `backend.tf` declares the encrypted S3 state key `workload/terraform.tfstate` with S3 lockfiles and an account restriction. The backend was initialized for the first target. Before future initialization or apply, inspect local and S3 state as described in [Terraform roots](../README.md#backend-initialization). The earlier `init -backend=false` was for syntax checks only; do not treat its provider cache as initialized remote state.
 
@@ -15,25 +15,27 @@ The controller role has an inline IAM policy using exact account and region ARNs
 - use `alb.ingress.kubernetes.io/target-type: ip`, port 8000 and `/health/ready`;
 - use the two `public_subnet_ids`, the foundation's ACM certificate, and no WAF/Shield annotations.
 
-Terraform provides the ALB security group, worker security-group rules and the controller IAM role/policy. Ansible applies the Ingress; the controller creates and owns the **single physical ALB**, listeners and target groups. Terraform declares no ALB resource. The controller will not create or modify security groups under this contract. Review the rendered policy and live reconciliation before deployment; the scoped draft has not been simulated or attached. See [preflight](#read-only-preflight) and [service policy scope](#service-policy-scope).
+Terraform provides the ALB security group, worker security-group rules and the controller IAM role/policy. Ansible applies the Ingress; the controller creates and owns the **single physical ALB**, listeners and target groups. Terraform declares no ALB resource. The controller will not create or modify security groups under this contract. The full deployment exercised the controller and one ALB; keep the rendered-policy and effective-permission review in the next build because policy simulation has not been recorded. See [preflight](#read-only-preflight) and [service policy scope](#service-policy-scope).
 
 ## Service policy scope
 
-The six durable workload service policy drafts and the [temporary first-creation draft](../policies/workload/deployer-workload-bootstrap-temporary-draft.json) are separate from the [IAM and attachment windows](../README.md#iam-and-service-policy-windows). The temporary managed policy was attached for the successful first target; the user confirmed its detach from `contact-form-deployer` and deletion on 27 September 2026, without an independent deployer CLI attachment-list check. Exact-ARN KMS, EKS and secret/ECR review copies under ignored `.local/` were prepared. The user reported all three attached; direct KMS and application-secret `DescribeSecret` metadata reads succeeded. The cluster target used a staged EC2 network grant; its missing `ec2:DescribeAddressesAttribute` read was added and directly verified before the retry. IAM simulation and a current attachment-slot review still require administrator attention. Their scope is:
+The six workload service drafts, IAM provisioning draft, IAM role-write draft, and workstation helper draft use stable account/Region/name patterns. An IAM administrator publishes and verifies them once, then attaches only the policies needed for each approved operation. The [temporary first-creation draft](../policies/workload/deployer-workload-bootstrap-temporary-draft.json) remains short-lived because tagged KMS key creation needs `kms:TagResource` on a generated key ARN. A permanent grant on `key/*` could tag another key into the project's authorized set. The secret creation grant stays in that same temporary policy; its name prefix alone cannot prove ownership of an existing untagged secret.
 
-| Draft | Planned resource scope |
+| Draft | Resource scope and window |
 | --- | --- |
-| [Temporary bootstrap](../policies/workload/deployer-workload-bootstrap-temporary-draft.json) | Short customer-managed policy attachment used for tagged symmetric key and `contact-form/app-*` secret creation, creation tags, and post-create read/rotation; detached from `contact-form-deployer` and deleted on 27 September 2026 (user-confirmed) |
-| [EC2 network](../policies/workload/deployer-workload-service-draft-ec2-network.json) | VPC, six subnets, NAT/EIPs, routes and regional refresh reads |
-| [EC2 compute](../policies/workload/deployer-workload-service-draft-ec2-compute.json) | Project security groups/rules, relay, worker launch template and root-volume tags |
-| [EKS](../policies/workload/deployer-workload-service-draft-eks.json) | Private cluster, deployer access, three add-ons and two node groups; first cluster creation requires the exact key ARN |
-| [KMS](../policies/workload/deployer-workload-service-draft-kms.json) | Post-bootstrap management of the one exact workload key, including `CreateGrant` for EKS and seven-day deletion scheduling; no `CreateKey`. `CreateGrant` permits grantee choice; keep it only for cluster creation and remove it from the policy version afterward |
-| [RDS](../policies/workload/deployer-workload-service-draft-rds.json) | Named private Multi-AZ database and subnet group, with RDS-managed master secret |
-| [Secrets Manager/ECR](../policies/workload/deployer-workload-service-draft-secret-ecr.json) | Post-bootstrap exact application-secret read/metadata management and named ECR repository; no application-secret creation. The user confirmed `ContactFormWorkloadSecretECR` attached; direct `DescribeSecret` metadata read succeeded. Review the published version and simulate value-write actions before full apply |
+| [Temporary bootstrap](../policies/workload/deployer-workload-bootstrap-temporary-draft.json) | First target only: tagged symmetric key and `contact-form/app-*` secret creation, creation tags and initial reads. Attach immediately before that reviewed two-create plan; detach immediately afterward, including after failure. A reviewed policy may be retained detached for another run. |
+| [EC2 network](../policies/workload/deployer-workload-service-draft-ec2-network.json) | VPC, six subnets, NAT/EIPs, routes, owned-EIP disassociation for teardown, and regional refresh reads. |
+| [EC2 compute](../policies/workload/deployer-workload-service-draft-ec2-compute.json) | Project security groups/rules, relay, worker launch template and root-volume tags. |
+| [EKS](../policies/workload/deployer-workload-service-draft-eks.json) | Private cluster, deployer access, three add-ons and two node groups. The encryption key condition matches a Singapore/account KMS key UUID shape; KMS grant authority is separately restricted to an already tagged project key. |
+| [KMS](../policies/workload/deployer-workload-service-draft-kms.json) | Post-create actions on a Singapore/account key UUID with all three existing ownership tags; no create, tag or untag grant. `CreateGrant` still permits grantee choice and must be attached only when needed. |
+| [RDS](../policies/workload/deployer-workload-service-draft-rds.json) | Named private Multi-AZ database and subnet group, with RDS-managed master secret. |
+| [Secrets Manager/ECR](../policies/workload/deployer-workload-service-draft-secret-ecr.json) | App-secret metadata and deletion under `contact-form/app-*`, guarded by all three existing ownership tags; no value read/write or tag mutation. Named ECR repository permissions are unchanged. |
 
 The RDS policy restricts requested create storage to 20 GiB and requested modify storage to at most 40 GiB with class `db.t4g.small`. IAM has no condition for `MaxAllocatedStorage`: Terraform sets its autoscaling ceiling to 40 GiB, but IAM does **not** enforce a hard 40-GiB ceiling. Review both storage values in the exact saved plan and keep the RDS write grant attached only for a time-limited apply or destroy window; monitor actual storage and charges.
 
-The provider tags owned resources `Project=aws-contact-form-eks`, `ManagedBy=Terraform`, and `Lifecycle=workload`. Generated IDs, tag-on-create behavior, EKS-managed security-group context, KMS grants, RDS dependencies, service-linked roles, boundaries and quotas still need live validation for the remaining resources. An access denial requires review of the exact call, not a blanket service grant. With the recorded state-access policy inline, the six durable workload policies plus two IAM drafts would use 9 of the default 10 managed user-policy slots if one other managed policy is attached directly. The temporary bootstrap grant occupied one managed attachment slot during its window; its removal was user-confirmed on 27 September. `iam:ListAttachedUserPolicies` is denied on the deployer, so an IAM administrator must check actual attachments and available slots in the Console, detach completed foundation-stage or other obsolete grants, and recheck slots before later exact-ARN grants.
+The provider tags owned resources `Project=aws-contact-form-eks`, `ManagedBy=Terraform`, and `Lifecycle=workload`. Verify those tags and key-policy IAM delegation on every new KMS key, app secret and OIDC provider before destructive actions. A name or matching tag is not, by itself, proof of Terraform ownership. The four OIDC statements match the regional EKS issuer path with a 32-character ID and require the ownership tags for management. Their initial tag grant accepts only the three fixed ownership values and rejects a provider with conflicting existing ownership tags; a pre-existing provider lacking ownership tags on the same issuer path remains a residual risk. Inventory that path before publication and each apply, and keep IAM provisioning attached only for the required window. Do not add a permanent wildcard key-tag grant to close a permission gap.
+
+The recorded state-access grant is inline and consumes no managed slot. Six workload service policies plus two IAM policies use eight of the default ten managed-policy attachments; the helper makes nine, and **one** of temporary bootstrap, preflight, or runtime inventory makes ten. Detach completed foundation-stage policies and rotate these optional windows instead of requesting more slots or keeping all grants active. The administrator checks actual attachments, policy versions, boundaries and service controls in the Console; `iam:ListAttachedUserPolicies` is denied to the deployer. Policy JSON parsing and Terraform plans do not prove effective permissions.
 
 ## Read-only preflight
 
@@ -53,182 +55,92 @@ The trimmed [preflight read policy](../policies/workstation/preflight-read-polic
 
 For a first pin, preflight checks the current Singapore recommended node release and writes its SSM parameter version and AMI ID. For a frozen older release, supply **both** evidence fields from an earlier verified file; the script reads that exact parameter version and reports recommendation drift. `READY` (exit 0) atomically writes ignored mode-600 `.local/verified-workload.tfvars.json`; `BLOCKED` (2) means a prerequisite failed and `INCOMPLETE` (1) means a read, credential or response failed. A failed run preserves an existing verified file, and a different successful pin cannot overwrite it: choose a new `--verified-file` path and set `WORKLOAD_VARS` to that path. Copy the verified file securely to the rehearsal workstation, recheck it there as a separate candidate, and retain it through destroy. Expired credentials are `INCOMPLETE`, never readiness.
 
-## Two target first creation and OIDC binding
+## Two target first creation and repeatable IAM
 
-Complete foundation and certificate staging, [backend/state reconciliation](../README.md#backend-initialization), read-only preflight, actual permission review, a current Singapore cost/credit check, and a **fresh saved plan reviewed before each apply**. The user already approved the full workload deployment and teardown at an estimated US$0.50–1.00/hour and a US$10–20 planning allowance before credits for less than ten hours of runtime. That approval covers a rebuild within the same scope and cost range; seek renewed explicit approval if the proposed scope or estimated cost exceeds it. Keep a total paid-runtime clock. If either target is already in workload state, stop and reconcile instead of recreating it. Use the **same** frozen verified file and reconciled workload S3 backend for both targets and the later full plan.
+Complete the retained foundation and certificate stages, [backend/state reconciliation](../README.md#backend-initialization), read-only preflight, current Singapore cost and credit check, and **fresh saved-plan review before each apply**. Present the estimate and obtain the owner's confirmation before each new paid deployment. Keep a total paid-runtime clock. Reconcile an already managed resource rather than recreating it. Use the same verified inputs and S3 backend through both targets and the full plan. Old plans and kubeconfig do not apply to a new workload.
 
-**Earlier attempt:** Both targets were approved and applied on 27 September, then destroyed after the later node-group IAM failure. The first target's temporary policy removal was user-confirmed. The original cluster target partly failed because `ec2:DescribeAddressesAttribute` was denied; the tagged EIPs were verified and safely untainted after that read grant was added. A fresh retry created the private cluster and NAT gateways. The commands below are for a fresh build; none of the earlier saved plans or the old cluster issuer may be reused.
+Before a paid target, an IAM administrator publishes the reusable drafts as reviewed default policy versions **once** and verifies attachments, IAM policy simulations and a direct `iam:GetRole` read for `AWSServiceRoleForAmazonEKSNodegroup`. The old published KMS, secret, OIDC and helper versions contain destroyed resource IDs; replace those versions with the tracked pattern-based drafts once. Check the actual account/Region, the retained Route 53 zone, the absence of unrelated resources matching the project patterns, and existing IAM boundaries. The separate role-write policy can update trust and arbitrary inline policies on four named roles without a permissions boundary; attach it only for monitored apply/change/destroy windows. [Policy scope and slot counts](#service-policy-scope) apply throughout. The deployer cannot publish policy versions.
 
-For the first target, the root/account administrator uses the **IAM Console** (no separate administrator CLI profile) to review the [temporary bootstrap policy](../policies/workload/deployer-workload-bootstrap-temporary-draft.json). This is account-prerequisite IAM setup; Terraform manages the workload resources, not this policy. The deployer cannot call `iam:ListAttachedUserPolicies` or `access-analyzer:ValidatePolicy`, so check its actual policies, groups, boundary and attachment slots in the Console. Use the IAM Console policy editor's validation under the administrator login and simulate allowed and denied create, tag, read and rotation actions with correct/wrong tags, secret names and Regions. For a fresh bootstrap attachment, validate and simulate this draft in the IAM Console; the successful 27 September apply alone does not establish its full IAM scope.
+For the first target, the administrator attaches the reviewed `ContactFormWorkloadBootstrapTemporary` policy for a short window. Its `kms:CreateKey` request must have the three fixed tags, Singapore Region, a symmetric encryption key and the specified origin. Its `kms:TagResource` grant still spans generated key IDs and can tag another key while attached if that key policy permits, regardless of its existing tags; inspect existing keys and detach this grant immediately after the target. The app-secret create/tag grant is limited to `contact-form/app-*` and the three requested ownership tags. Neither grant is needed in the later cluster or full plan. Check that the actual user has a free managed-policy slot before attaching.
 
-For a fresh build or rebuild, in **IAM → Policies → Create policy → JSON**, paste the reviewed draft and create customer-managed `ContactFormWorkloadBootstrapTemporary`. In **IAM → Users → contact-form-deployer → Permissions**, detach `ContactFormFoundationStage01` if its completed window is over, confirm a managed attachment slot is free, then attach the temporary policy and verify its exact ARN on the user. Do not alter the existing state-access or preflight inline policies. If the slot, validation, simulation or attachment check fails, stop. The [IAM user inline aggregate limit](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_iam-quotas.html) is why this temporary grant is customer-managed.
-
-This is a short-lived grant. KMS requires `Resource: "*"` for `CreateKey`, and the creator can supply the initial key policy; IAM cannot constrain it to one key. Creation tagging uses a key ARN wildcard and three required request tags. The secret grant covers only `contact-form/app-*`, but that prefix can match more than one secret and `CreateSecret` can include an initial value even though this Terraform resource declares metadata only. Tags are not proof of Terraform ownership. Review the exact saved plan, keep the attachment window brief, and remove the grant after this target even if apply stops partway through. The new KMS and secret policies must never overlap this grant.
-
-From the repository root, use the existing deployer CLI identity. `terraform -chdir` resolves a relative `-out` under `terraform/workload`, so use an absolute path in Git-ignored `.local/`. For a fresh build or rebuild, inspect any existing saved copy's mode, current state and inputs before using it; never reuse the 27 September applied plan. For every newly saved plan, set `umask 077` first:
+From the repository root, keep plans in ignored, mode-600 `.local/` files. The first plan must contain **only** `aws_kms_key.eks` and `aws_secretsmanager_secret.app`, both creates, with the expected tags, seven-day key deletion window and secret metadata. Stop on any other action or a failed IAM or cost check:
 
 ```bash
 umask 077
 mkdir -p .local
 chmod 700 .local
+export AWS_PROFILE=contact-form-deployer AWS_REGION=ap-southeast-1 AWS_DEFAULT_REGION=ap-southeast-1
 WORKLOAD_VARS="${WORKLOAD_VARS:-$PWD/.local/verified-workload.tfvars.json}"
 BOOTSTRAP_PLAN="$PWD/.local/workload-bootstrap.tfplan"
-test -f "$WORKLOAD_VARS" || { printf 'Verified workload variables are missing; stop.\n' >&2; exit 1; }
-git check-ignore -q "$BOOTSTRAP_PLAN" || { printf 'Saved plan path is not ignored; stop.\n' >&2; exit 1; }
-export AWS_PROFILE=contact-form-deployer AWS_REGION=ap-southeast-1 AWS_DEFAULT_REGION=ap-southeast-1
-CALLER_ARN="$(aws sts get-caller-identity --query Arn --output text)" || exit 1
-[[ "$CALLER_ARN" == arn:aws:iam::203888389134:user/contact-form-deployer ]] || { printf 'Wrong AWS identity; stop.\n' >&2; exit 1; }
-printf '%s in %s\n' "$CALLER_ARN" "$AWS_REGION"
-rm -f -- "$BOOTSTRAP_PLAN" || exit 1
-terraform -chdir=terraform/workload init -input=false &&
+test -s "$WORKLOAD_VARS" && git check-ignore -q "$BOOTSTRAP_PLAN" || exit 1
+[[ "$(aws sts get-caller-identity --query Arn --output text)" == arn:aws:iam::203888389134:user/contact-form-deployer ]] || exit 1
+terraform -chdir=terraform/workload init -input=false || exit 1
+rm -f -- "$BOOTSTRAP_PLAN"
 terraform -chdir=terraform/workload plan -input=false -var-file="$WORKLOAD_VARS" \
-  -target=aws_kms_key.eks -target=aws_secretsmanager_secret.app \
-  -out="$BOOTSTRAP_PLAN" &&
+  -target=aws_kms_key.eks -target=aws_secretsmanager_secret.app -out="$BOOTSTRAP_PLAN" &&
 chmod 600 "$BOOTSTRAP_PLAN" &&
-[[ "$(stat -c %a "$BOOTSTRAP_PLAN")" == 600 ]] &&
 terraform -chdir=terraform/workload show -no-color "$BOOTSTRAP_PLAN"
 ```
 
-Inspect `terraform -chdir=terraform/workload show -json "$BOOTSTRAP_PLAN"`: the only managed resource changes must be `aws_kms_key.eks` and `aws_secretsmanager_secret.app`, each with `actions: ["create"]`. Check the key's effective three provider tags and rotation, and the empty secret metadata and generated name prefix. Any extra create, update, destroy or replacement stops the target. A plan proves proposed changes, not effective IAM permissions. AWS lists the customer-managed key at [US$1/month prorated hourly](https://aws.amazon.com/kms/pricing/) and the secret at [US$0.40/month prorated hourly](https://aws.amazon.com/secrets-manager/pricing/), plus applicable API charges; key storage is not charged while scheduled for deletion. Confirm current Singapore pricing, credits and the target's duration, and check that the plan fits the existing costed approval above. Seek renewed approval only if scope or estimated cost exceeds it; a temporary IAM attachment alone is never approval.
-
-After the fresh plan and cost checks pass under the existing approval, in the same verified identity and Region, apply the exact reviewed saved plan:
+After reviewing the exact saved plan and confirming its approved scope and cost, apply it. The administrator then detaches the temporary policy **even if apply fails**. Retain it detached only after checking that its default version still matches this draft; deleting it is also acceptable, but a later recreation must use the same reviewed draft. If the target fails, reconcile state and AWS resources before continuing.
 
 ```bash
-BOOTSTRAP_PLAN="${BOOTSTRAP_PLAN:-$PWD/.local/workload-bootstrap.tfplan}"
-[[ "$(stat -c %a "$BOOTSTRAP_PLAN")" == 600 ]] || { printf 'Saved plan mode is not 600; stop.\n' >&2; exit 1; }
-aws sts get-caller-identity
 terraform -chdir=terraform/workload apply "$BOOTSTRAP_PLAN"
+terraform -chdir=terraform/workload state show aws_kms_key.eks
+terraform -chdir=terraform/workload state show aws_secretsmanager_secret.app
 ```
 
-Immediately after the target finishes, including after a partial failure, the administrator **detaches** `ContactFormWorkloadBootstrapTemporary` from the deployer, deletes the temporary customer-managed policy in the IAM Console, and confirms both removal and a free attachment slot. If apply failed, reconcile state and any created resources before requesting another brief grant and a fresh plan; do not proceed to the cluster target. After a successful target, read the two full `arn` values from state, including the secret's generated six-character suffix. In administrator-reviewed policy copies, replace **every** `arn:aws:kms:ap-southeast-1:203888389134:key/00000000-0000-0000-0000-000000000000` in the [KMS draft](../policies/workload/deployer-workload-service-draft-kms.json) and the [EKS draft](../policies/workload/deployer-workload-service-draft-eks.json) `CreateCluster` condition with the key ARN. Replace **every** `arn:aws:secretsmanager:ap-southeast-1:203888389134:secret:contact-form/app-BOOTSTRAP-PLACEHOLDER-000000` in the [secret/ECR draft](../policies/workload/deployer-workload-service-draft-secret-ecr.json) with the exact app-secret ARN. Keep the review copies in ignored mode-600 `.local/` files and publish from those copies only; leave the tracked drafts inert. Verify account, Region, resource type, Terraform address, ownership tags and key-policy IAM delegation; reject any remaining placeholder or wildcard key-management grant. In the Console, the IAM administrator validates, simulates allowed and denied cases, versions and attaches those exact KMS/EKS/secret policies plus the reviewed IAM and other stage grants. The [tracked IAM template](../policies/workload/deployer-iam-provisioning-draft.json) still has **all four** OIDC `Resource` values at inert `id/BOOTSTRAP-PLACEHOLDER`; do not bind an issuer yet.
+Verify the new key and secret ARNs, tags and Terraform addresses against read-only metadata. Their generated IDs are **runtime evidence**, never replacements in an IAM JSON file. The KMS draft grants only post-create operations on a key with all three tags. The secret/ECR draft grants only app-secret metadata and deletion on a matching prefix **and** those tags. The EKS create condition checks the regional/account key UUID shape; because it cannot inspect the referenced key's tags, also verify the separate `kms:DescribeKey`/`kms:CreateGrant` authorization resolves to this owned key. Stop if another key under the pattern carries the project tags or if an unrelated policy grants broader KMS authority.
 
-**Earlier attempt:** The user confirmed on 27 September that `ContactFormWorkloadBootstrapTemporary` was detached from `contact-form-deployer` and deleted. Three exact-ARN review copies were prepared under ignored `.local/` for the now-destroyed resources; regenerate them for a rebuild. The user reported KMS, EKS and `ContactFormWorkloadSecretECR` policies attached. Direct KMS and application-secret `DescribeSecret` metadata reads succeeded then. The tracked secret/ECR draft and that review copy excluded `secretsmanager:UpdateSecret`, and static parity review passed. The user confirmed that the default `ContactFormIAMProvisioning` JSON contained the old cluster's issuer in all four OIDC statements and was attached to `contact-form-deployer`; an exact-ARN `GetOpenIDConnectProvider` returned `NoSuchEntity` during that attempt. Recheck current policy versions and attachments, including `ContactFormIAMRoleWrites`, and complete IAM simulations before the next full apply.
-
-For a fresh build or rebuild, switch to the deployer and make a **separate** saved cluster target plan with the same `WORKLOAD_VARS`. First confirm the previous cluster is absent from both state and AWS; if a cluster is present, reconcile it before using this block:
+Plan the cluster target with the durable service and IAM policies attached in their reviewed windows. The target may create a VPC, routes, NAT gateways and roles, and starts paid EKS time. Inspect every dependency and confirm the private-only API, encryption key and current cost before applying:
 
 ```bash
-export AWS_PROFILE=contact-form-deployer AWS_REGION=ap-southeast-1 AWS_DEFAULT_REGION=ap-southeast-1
-aws sts get-caller-identity --profile "$AWS_PROFILE"
-umask 077
-mkdir -p .local
-chmod 700 .local
 CLUSTER_PLAN="$PWD/.local/workload-cluster.tfplan"
-rm -f -- "$CLUSTER_PLAN" || exit 1
+git check-ignore -q "$CLUSTER_PLAN" || exit 1
+rm -f -- "$CLUSTER_PLAN"
 terraform -chdir=terraform/workload plan -input=false -var-file="$WORKLOAD_VARS" \
   -target=aws_eks_cluster.main -out="$CLUSTER_PLAN" &&
 chmod 600 "$CLUSTER_PLAN" &&
-[[ "$(stat -c %a "$CLUSTER_PLAN")" == 600 ]] &&
 terraform -chdir=terraform/workload show -no-color "$CLUSTER_PLAN"
 ```
 
-After checking every dependency, the fresh cluster plan and current cost against the existing approval (or renewed approval if scope or cost exceeds it):
+After reviewing the saved plan against the approved scope and allowance:
 
 ```bash
-CLUSTER_PLAN="${CLUSTER_PLAN:-$PWD/.local/workload-cluster.tfplan}"
 terraform -chdir=terraform/workload apply "$CLUSTER_PLAN"
 terraform -chdir=terraform/workload state show aws_eks_cluster.main
 CLUSTER_NAME="$(terraform -chdir=terraform/workload output -raw cluster_name)"
 OIDC_ISSUER="$(aws eks describe-cluster --region "$AWS_REGION" --name "$CLUSTER_NAME" --query 'cluster.identity.oidc.issuer' --output text)"
-[[ "$OIDC_ISSUER" =~ ^https://oidc\.eks\.ap-southeast-1\.amazonaws\.com/id/[[:alnum:]]+$ ]] || { printf 'Unexpected issuer; stop.\n' >&2; exit 1; }
-OIDC_PROVIDER_ARN="arn:aws:iam::203888389134:oidc-provider/${OIDC_ISSUER#https://}"
-printf '%s\n' "$OIDC_PROVIDER_ARN"
+[[ "$OIDC_ISSUER" =~ ^https://oidc\.eks\.ap-southeast-1\.amazonaws\.com/id/[[:alnum:]]{32}$ ]] || exit 1
+printf '%s\n' "$OIDC_ISSUER"
 ```
 
-For a fresh build or rebuild, the cluster target can create VPC, subnets, routes, NAT gateways and roles; it starts paid EKS time and must **not** contain the OIDC provider. Inspect the exact dependency set, update the Singapore estimate and credits, and confirm it remains within the existing approved scope and cost before applying. In the **earlier attempt**, direct AWS reads confirmed the cluster was `ACTIVE` at 1.36, its API was private-only, five control-plane log types and Secrets encryption were enabled, and both NAT gateways were `available`. Those resources were later destroyed. For a new cluster, compare the state cluster name, account, Region and read-only EKS issuer; stop on any failed read or mismatch. Never guess an issuer or use `id/*`.
+Compare the cluster name, private endpoint, encryption key and live issuer with state. The IAM provisioning policy's regional issuer pattern already covers the new 32-character ID; **do not publish a new policy version or paste this issuer into a policy**. Terraform's pod-role trust still contains the exact live issuer. The cluster target must not include the OIDC provider. For the full plan, inventory any pre-existing OIDC providers on the same regional path; the create-time tagging allowance can tag a provider lacking ownership tags if one exists, so stop and resolve that collision before apply.
 
-For a fresh build or rebuild, an administrator creates `.local/deployer-iam-provisioning.json` from the **inert tracked template**, leaving that template unchanged. Re-read the issuer in the same session and reject an old or mixed issuer. The copy must be Git-ignored, mode 600, and contain the new exact provider ARN in precisely `ReadClusterOidcProviders`, `CreateTaggedClusterOidcProvider`, `TagNewClusterOidcProviderAtCreate`, and `ManageTaggedClusterOidcProvider`:
-
-```bash
-: "${CLUSTER_NAME:?Read the current cluster name from workload state}"
-: "${OIDC_ISSUER:?Read the current issuer from EKS}"
-: "${OIDC_PROVIDER_ARN:?Construct the exact provider ARN}"
-CURRENT_ISSUER="$(aws eks describe-cluster --region "$AWS_REGION" --name "$CLUSTER_NAME" --query 'cluster.identity.oidc.issuer' --output text)" || exit 1
-[[ "$CURRENT_ISSUER" == "$OIDC_ISSUER" ]] || { printf 'Issuer changed; stop.\n' >&2; exit 1; }
-[[ "$OIDC_PROVIDER_ARN" == "arn:aws:iam::203888389134:oidc-provider/${CURRENT_ISSUER#https://}" ]] || exit 1
-umask 077
-mkdir -p .local
-chmod 700 .local
-OIDC_POLICY=.local/deployer-iam-provisioning.json
-git check-ignore -q "$OIDC_POLICY" || { printf 'Review copy is not ignored; stop.\n' >&2; exit 1; }
-[[ ! -L "$OIDC_POLICY" ]] || { printf 'Review copy is a symlink; stop.\n' >&2; exit 1; }
-python3 - "$OIDC_PROVIDER_ARN" <<'PY'
-import json, os, pathlib, re, sys, tempfile
-source = pathlib.Path('terraform/policies/workload/deployer-iam-provisioning-draft.json')
-target = pathlib.Path('.local/deployer-iam-provisioning.json')
-new_arn = sys.argv[1]
-if not re.fullmatch(r'arn:aws:iam::203888389134:oidc-provider/oidc\.eks\.ap-southeast-1\.amazonaws\.com/id/[A-Za-z0-9]+', new_arn):
-    raise SystemExit('Invalid new OIDC provider ARN; stop')
-document = json.loads(source.read_text())
-sids = {'ReadClusterOidcProviders', 'CreateTaggedClusterOidcProvider', 'TagNewClusterOidcProviderAtCreate', 'ManageTaggedClusterOidcProvider'}
-statements = [s for s in document['Statement'] if s.get('Sid') in sids]
-if len(statements) != 4 or {s['Sid'] for s in statements} != sids:
-    raise SystemExit('Expected exactly four OIDC statements; stop')
-if any('oidc-provider/' in json.dumps(s) for s in document['Statement'] if s.get('Sid') not in sids):
-    raise SystemExit('Unexpected OIDC statement; stop')
-placeholder = 'arn:aws:iam::203888389134:oidc-provider/oidc.eks.ap-southeast-1.amazonaws.com/id/BOOTSTRAP-PLACEHOLDER'
-if {s['Resource'] for s in statements} != {placeholder}:
-    raise SystemExit('Mixed, wildcard or old issuer in template; stop')
-for statement in statements:
-    statement['Resource'] = new_arn
-rendered = json.dumps(document, indent=2) + '\n'
-if rendered.count('oidc-provider/') != 4 or placeholder in rendered or 'id/*' in rendered:
-    raise SystemExit('Mixed or stale issuer in review copy; stop')
-if sum(not c.isspace() for c in rendered) >= 6144:
-    raise SystemExit('Managed policy exceeds 6,144 nonwhitespace characters; stop')
-with tempfile.NamedTemporaryFile(mode='w', dir=target.parent, prefix='.oidc-review-', delete=False) as handle:
-    os.chmod(handle.name, 0o600)
-    handle.write(rendered)
-    temporary = handle.name
-os.replace(temporary, target)
-PY
-[[ "$(stat -c %a "$OIDC_POLICY")" == 600 ]] || { printf 'Review copy mode is not 600; stop.\n' >&2; exit 1; }
-python3 -m json.tool "$OIDC_POLICY" >/dev/null
-```
-
-**Earlier attempt:** The ignored mode-600 `.local/deployer-iam-provisioning.json` copy was prepared with the old issuer ending `CA1A506A94A42855899E0176A0F40FE7` in all four required OIDC statements. The user confirmed those statements were published and attached at the time. A direct exact-ARN `GetOpenIDConnectProvider` call returned `NoSuchEntity`: the read was authorized, but the provider had not been created. This did not verify OIDC create/tag permissions, and IAM simulation remains unverified. The tracked template remains inert. Regenerate the copy from the **new** cluster issuer on rebuild.
-
-The deployer has no administrator CLI profile, and `access-analyzer:ValidatePolicy` is denied to it. For a fresh build or policy update, an account administrator uses the **IAM Console** to publish or verify the local review copy; the previously confirmed default version contains the destroyed cluster's issuer and must be replaced for a rebuild:
-
-1. Open `.local/deployer-iam-provisioning.json` on the workstation and copy its complete JSON. In IAM → Policies, open the project IAM provisioning policy. Review its current version and create a new policy version from this copy; if the policy does not exist, create it from this copy. Never publish the tracked placeholder template or an older review copy.
-2. Use the IAM Console policy editor validation and IAM Policy Simulator. Test allowed and denied OIDC Create plus dependent initial Tag with the three required request tags and only the `Project`, `ManagedBy`, `Lifecycle` keys. Test missing/wrong/extra tags, another issuer, and later Manage with matching and absent existing ownership tags. Check any permissions boundary and service controls.
-3. Set the approved new version as default. Reopen that published version and verify that precisely four OIDC statements contain the live provider ARN. Check the managed policy attachment slot, attach this policy to `contact-form-deployer` for the approved window if needed, and verify it appears on that user. Stop if validation, simulation, version publication or attachment fails.
-
-The IAM policy change is one-time account access setup for this workload run; Terraform still creates the workload IAM roles, OIDC provider and infrastructure. Do not use a stale issuer from another cluster build.
-
-The deployer does not create policy versions. Keep the role-write attachment brief as described in [IAM and service policy windows](../README.md#iam-and-service-policy-windows). A failed validation, simulation, publication or attachment stops the full plan. An old or mixed issuer stops a rebuild.
-
-Only after both targets and policy binding, switch to the deployer and make a **fresh full** plan from the post-cluster state. The key, app-secret metadata and cluster must already be in workload state and must not be planned for replacement. The earlier 50-addition plan was approved and partially applied: RDS, ECR and the relay were created, but node groups failed and the workload was destroyed. That plan is invalid. On a rebuild, review the new plan's workers, relay, IRSA, ECR, RDS and OIDC provider, finish IAM checks, and confirm the updated cost remains within the existing approval. Apply only the freshly reviewed saved plan; seek renewed approval if scope or estimated cost exceeds the approved range. From the repository root:
+Make a fresh full plan from post-cluster state. The key, app-secret metadata and cluster must remain in state without replacement. Review workers, relay, IRSA, ECR, RDS and OIDC provider, current IAM attachments and costs. The earlier plan failed on the node-group service-role lookup and was invalidated by teardown. Apply only the freshly reviewed plan:
 
 ```bash
-export AWS_PROFILE=contact-form-deployer AWS_REGION=ap-southeast-1 AWS_DEFAULT_REGION=ap-southeast-1
-aws sts get-caller-identity --profile "$AWS_PROFILE"
-WORKLOAD_VARS="${WORKLOAD_VARS:-$PWD/.local/verified-workload.tfvars.json}"
-umask 077
-mkdir -p .local
-chmod 700 .local
 FULL_PLAN="$PWD/.local/workload.tfplan"
-# Precondition: both approved targets are in state; review current exact-ARN grants and IAM simulations before apply.
-rm -f -- "$FULL_PLAN" || exit 1
+git check-ignore -q "$FULL_PLAN" || exit 1
+rm -f -- "$FULL_PLAN"
 terraform -chdir=terraform/workload plan -input=false -var-file="$WORKLOAD_VARS" -out="$FULL_PLAN" &&
 chmod 600 "$FULL_PLAN" &&
-[[ "$(stat -c %a "$FULL_PLAN")" == 600 ]] &&
 terraform -chdir=terraform/workload show -no-color "$FULL_PLAN"
 ```
 
-After reviewing this fresh full plan and current cost/credits against the existing approval:
+After confirming the plan remains within the approved scope and allowance:
 
 ```bash
-FULL_PLAN="${FULL_PLAN:-$PWD/.local/workload.tfplan}"
 terraform -chdir=terraform/workload apply "$FULL_PLAN"
 ```
 
-The reviewed saved plan embeds these inputs. For a fully deployed stack, after Ansible cleanup, set `umask 077`, save `plan -destroy -input=false -var-file="$WORKLOAD_VARS" -out="$PWD/.local/workload-destroy.tfplan"`, verify mode 600, review it with `show`, and apply that exact saved plan under the approved teardown window. If Terraform only partly deploys and no Ingress or ALB exists, use the verification gate below first.
+The reviewed saved plan embeds its inputs. For a fully deployed stack, after Ansible cleanup, set `umask 077`, save `plan -destroy -input=false -var-file="$WORKLOAD_VARS" -out="$PWD/.local/workload-destroy.tfplan"`, verify mode 600, review it with `show`, and apply that exact saved plan under the approved teardown window. If Terraform only partly deploys and no Ingress or ALB exists, use the verification gate below first.
 
 ## Lifecycle
 
 The foundation owns `/aws/eks/contact-form-eks/cluster` and the fixed-name RDS `postgresql` and `upgrade` log groups with seven-day retention, so their logs survive runtime teardown. Workload planning requires the foundation's `rds_log_group_names` output to match both expected names. Check both actual states for prior RDS log-group ownership and complete any deliberate state handoff before applying; see [backend initialization](../README.md#backend-initialization). The setup Job and Flask use distinct IRSA roles. The app can read only the application secret; the setup Job can read the RDS master secret and read/write the app secret.
 
-For a fully deployed stack, follow the [Ansible cleanup sequence](../../ansible/README.md#cleanup-before-terraform-destroy) before workload destroy: remove the application DNS alias and Ingress, then wait until the controller has deleted the ALB and target groups. Destroying this root deliberately deletes RDS and all submissions, the worker instances, NAT gateways, ECR images, and runtime secrets; KMS key deletion is scheduled. Keep the foundation and state bucket. Use the [scoped residual inventory](../../scripts/README.md#residual-inventory-and-retained-costs) and inspect any orphaned ALB, NAT, EIP, RDS, EBS or backup resources. For a fresh rebuild, rerun preflight, both freshly reviewed targets, exact KMS/secret rebinding and a new four-statement OIDC review copy for the new issuer before generating the full plan; never reuse an old policy version or plan.
+For a fully deployed stack, follow the [Ansible cleanup sequence](../../ansible/README.md#cleanup-before-terraform-destroy) before workload destroy: remove the application DNS alias and Ingress, then wait until the controller has deleted the ALB and target groups. Destroying this root deliberately deletes RDS and all submissions, the worker instances, NAT gateways, ECR images, and runtime secrets; KMS key deletion is scheduled. Keep the foundation and state bucket. Use the [scoped residual inventory](../../scripts/README.md#residual-inventory-and-retained-costs) and inspect any orphaned ALB, NAT, EIP, RDS, EBS or backup resources. For a fresh rebuild, rerun preflight, review both new targets and verify the reusable policy versions and current attachments before generating the full plan; never reuse an old plan or kubeconfig.
 
 ### Partial deployment teardown before Ansible
 
@@ -264,7 +176,9 @@ After apply, run `python3 scripts/check_residual.py --profile contact-form-deplo
 
 ### Recovery after a partial destroy
 
-In the first teardown, the provider's EKS add-on and cluster deletion waiters received `AccessDenied` on `DescribeAddon` and `DescribeCluster` after the deletes. Its EIP cleanup then tried `DisassociateAddress` using stale association IDs after both NAT gateways had been deleted. Treat these as failed waiters or stale state, **not** proof of deletion. With authorized read-only AWS inventory or the Console, check the exact account, Region, cluster, add-on names, VPC, NAT gateways and allocation IDs. Remove an EKS resource address from Terraform state only after independent evidence shows that exact resource is absent. If any read is denied or the resource still exists, stop and fix the read permission or finish deletion; never use state removal to hide a live resource.
+**Latest teardown finding:** The first full destroy deleted 70 of 72 planned resources, then both EIPs failed because Terraform called `ec2:DisassociateAddress` and the deployer was denied on `arn:aws:ec2:ap-southeast-1:203888389134:*/*`. NAT gateway deletion had already disassociated the addresses; a fresh plan containing only the two EIPs then released them. The [network draft](../policies/workload/deployer-workload-service-draft-ec2-network.json) now adds `ec2:DisassociateAddress` to the existing owned-network statement, scoped to the account/Region EIP resource pattern and existing Project/Lifecycle tags. AWS documents EIP resource and tag conditions for this action. `AssociationId` is the API input, not an IAM resource type; EC2 must resolve an active association to the tagged EIP for this statement to match. The prior `*/*` denial came after NAT deletion and may indicate that the stale association no longer resolved to an EIP. If EC2 authorizes against that literal wildcard context, this scoped statement will still deny. AWS also lists a network-interface resource for this action, which the existing statement does not cover; do not assume an EIP-only allow is sufficient without an effective-permission test. The next one-shot destroy is therefore unverified; use `--dry-run` on an active project association to check authorization without disassociating it, and retain the guarded two-EIP retry when needed. Do not replace this with an account-wide disassociation grant merely to silence that error. The administrator must publish and simulate this revised network draft once before the next paid build.
+
+In an earlier teardown, the provider's EKS add-on and cluster deletion waiters received `AccessDenied` on `DescribeAddon` and `DescribeCluster` after the deletes. Its EIP cleanup then tried `DisassociateAddress` using stale association IDs after both NAT gateways had been deleted. Treat these as failed waiters or stale state, **not** proof of deletion. With authorized read-only AWS inventory or the Console, check the exact account, Region, cluster, add-on names, VPC, NAT gateways and allocation IDs. Remove an EKS resource address from Terraform state only after independent evidence shows that exact resource is absent. If any read is denied or the resource still exists, stop and fix the read permission or finish deletion; never use state removal to hide a live resource.
 
 For each EIP, confirm its exact allocation ID and `Project=aws-contact-form-eks`, `ManagedBy=Terraform`, `Lifecycle=workload` tags; confirm its NAT gateway is deleted and the allocation has no `AssociationId` or network-interface ID. Only then release that **one exact allocation ID** with the existing scoped permission, verify its absence, and reconcile its specific stale state address if needed. Refresh and make a new full destroy plan before continuing. Do not grant broad `ec2:DisassociateAddress`, release a list of EIPs at once, or remove state for an unverified resource. After the first teardown, the workload state contained no managed resources, the KMS key was `PendingDeletion`, and the foundation remained; the residual checker still could not verify snapshots because `ec2:DescribeSnapshots` was denied. Resolve that read gap before claiming complete cleanup.
 
