@@ -13,6 +13,47 @@ from botocore.exceptions import ClientError
 from scripts import check_residual
 
 
+def empty_session(denied_operations=()):
+    """Return mocked, empty AWS inventories without making network calls."""
+    session = Mock(region_name=check_residual.REGION)
+    clients = {name: Mock() for name in (
+        "sts", "ec2", "eks", "rds", "elbv2", "ecr", "secretsmanager", "kms",
+    )}
+    clients["sts"].get_caller_identity.return_value = {
+        "Account": check_residual.ACCOUNT,
+        "Arn": f"arn:aws:iam::{check_residual.ACCOUNT}:user/contact-form-deployer",
+    }
+    responses = {
+        "describe_vpcs": {"Vpcs": []},
+        "describe_nat_gateways": {"NatGateways": []},
+        "describe_instances": {"Reservations": []},
+        "describe_volumes": {"Volumes": []},
+        "describe_snapshots": {"Snapshots": []},
+        "list_clusters": {"clusters": []},
+        "describe_db_instances": {"DBInstances": []},
+        "describe_db_snapshots": {"DBSnapshots": []},
+        "describe_db_instance_automated_backups": {"DBInstanceAutomatedBackups": []},
+        "describe_load_balancers": {"LoadBalancers": []},
+        "list_secrets": {"SecretList": []},
+    }
+
+    def paginator(operation):
+        if operation in denied_operations:
+            error = ClientError({
+                "Error": {"Code": "AccessDenied", "Message": "denied"},
+            }, "".join(part.title() for part in operation.split("_")))
+            return Mock(paginate=Mock(side_effect=error))
+        return Mock(paginate=Mock(return_value=[responses[operation]]))
+
+    for client in clients.values():
+        client.get_paginator.side_effect = paginator
+    clients["ec2"].describe_addresses.return_value = {"Addresses": []}
+    clients["ecr"].describe_repositories.return_value = {"repositories": []}
+    clients["kms"].list_keys.return_value = {"Keys": [], "Truncated": False}
+    session.client.side_effect = clients.__getitem__
+    return session, clients
+
+
 class CostGuardTests(unittest.TestCase):
     def test_residual_inventory_rejects_wrong_account_before_listing(self):
         session = Mock()
@@ -26,22 +67,133 @@ class CostGuardTests(unittest.TestCase):
         self.assertEqual(session.client.call_args_list[0].args, ("sts",))
         self.assertEqual(len(session.client.call_args_list), 1)
 
-    def test_residual_inventory_propagates_denied_reads(self):
-        session = Mock()
-        session.region_name = check_residual.REGION
-        ec2 = Mock()
-        ec2.get_paginator.return_value.paginate.side_effect = ClientError({
-            "Error": {"Code": "AccessDenied", "Message": "denied"},
-        }, "DescribeVpcs")
-        session.client.side_effect = lambda service: {
-            "sts": Mock(get_caller_identity=Mock(return_value={
-                "Account": check_residual.ACCOUNT,
-                "Arn": f"arn:aws:iam::{check_residual.ACCOUNT}:user/contact-form-deployer",
-            })),
-            "ec2": ec2,
-        }[service]
-        with self.assertRaises(ClientError):
-            check_residual.collect(session)
+    def test_vpc_denial_marks_dependents_unknown_and_checks_other_services(self):
+        session, clients = empty_session({"describe_vpcs"})
+        alb_arn = "arn:aws:elasticloadbalancing:ap-southeast-1:203888389134:loadbalancer/app/owned"
+        clients["elbv2"].get_paginator.side_effect = lambda operation: Mock(
+            paginate=Mock(return_value=[{"LoadBalancers": [{
+                "LoadBalancerArn": alb_arn, "VpcId": "vpc-unread",
+            }]}])
+        )
+        clients["elbv2"].describe_tags.return_value = {"TagDescriptions": [{"Tags": [
+            {"Key": "elbv2.k8s.aws/cluster", "Value": "contact-form-eks"},
+            {"Key": "ingress.k8s.aws/stack", "Value": "contact-form/contact-form"},
+        ]}]}
+        inventory = check_residual.collect(session)
+
+        self.assertIsNone(inventory["resources"]["vpcs"])
+        self.assertIsNone(inventory["resources"]["nat_gateways"])
+        self.assertEqual(inventory["resources"]["elastic_ips"], [])
+        self.assertEqual(inventory["resources"]["load_balancers"], [alb_arn])
+        for section in ("nat_gateways", "elastic_ips", "load_balancers"):
+            self.assertEqual(inventory["read_errors"][section]["code"],
+                             "DependencyUnavailable")
+        self.assertEqual(inventory["read_errors"]["vpcs"]["operation"],
+                         "DescribeVpcs")
+        clients["ec2"].describe_addresses.assert_called_once_with()
+        clients["elbv2"].describe_tags.assert_called_once_with(ResourceArns=[alb_arn])
+        self.assertEqual(inventory["resources"]["rds_instances"], [])
+        self.assertEqual(inventory["resources"]["workload_kms_keys"], [])
+        clients["rds"].get_paginator.assert_called()
+        clients["kms"].list_keys.assert_called_once_with()
+
+    def test_nat_denial_still_reports_tagged_detached_eip_inconclusively(self):
+        session, clients = empty_session({"describe_nat_gateways"})
+        clients["ec2"].describe_addresses.return_value = {"Addresses": [
+            {"AllocationId": "eip-detached", "Tags": [
+                {"Key": "Project", "Value": check_residual.PROJECT},
+                {"Key": "Lifecycle", "Value": check_residual.LIFECYCLE},
+            ]},
+            {"AllocationId": "eip-unrelated", "Tags": [
+                {"Key": "Project", "Value": "other"},
+            ]},
+        ]}
+        output = io.StringIO()
+        with (
+            patch.object(sys, "argv", ["check_residual.py"]),
+            patch.object(check_residual.boto3, "Session", return_value=session),
+            contextlib.redirect_stdout(output),
+        ):
+            exit_code = check_residual.main()
+
+        report = json.loads(output.getvalue())
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(report["inventory_status"], "inconclusive")
+        self.assertTrue(report["runtime_resources_remaining"])
+        self.assertIsNone(report["resources"]["nat_gateways"])
+        self.assertEqual(report["resources"]["elastic_ips"], ["eip-detached"])
+        self.assertEqual(report["read_errors"]["nat_gateways"]["operation"],
+                         "DescribeNatGateways")
+        self.assertEqual(report["read_errors"]["elastic_ips"]["code"],
+                         "DependencyUnavailable")
+        clients["ec2"].describe_addresses.assert_called_once_with()
+
+    def test_nat_and_address_denials_report_both_read_failures(self):
+        session, clients = empty_session({"describe_nat_gateways"})
+        clients["ec2"].describe_addresses.side_effect = ClientError({
+            "Error": {"Code": "AccessDenied", "Message": "addresses denied"},
+        }, "DescribeAddresses")
+
+        inventory = check_residual.collect(session)
+
+        self.assertIsNone(inventory["resources"]["elastic_ips"])
+        self.assertEqual(inventory["read_errors"]["elastic_ips"]["code"],
+                         "DependencyUnavailable")
+        self.assertEqual(inventory["read_errors"]["elastic_ips"]["read_error"], {
+            "code": "AccessDenied", "operation": "DescribeAddresses",
+            "message": "addresses denied",
+        })
+
+    def test_snapshot_denial_keeps_successful_sections_and_returns_inconclusive(self):
+        session, clients = empty_session({"describe_snapshots"})
+        output = io.StringIO()
+        with (
+            patch.object(sys, "argv", ["check_residual.py"]),
+            patch.object(check_residual.boto3, "Session", return_value=session),
+            contextlib.redirect_stdout(output),
+        ):
+            exit_code = check_residual.main()
+
+        report = json.loads(output.getvalue())
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(report["inventory_status"], "inconclusive")
+        self.assertIsNone(report["runtime_resources_remaining"])
+        self.assertEqual(report["resources"]["ebs_volumes"], [])
+        self.assertIsNone(report["resources"]["ebs_snapshots"])
+        self.assertEqual(report["resources"]["rds_automated_backups"], [])
+        self.assertEqual(report["resources"]["application_secrets"], [])
+        self.assertEqual(report["read_errors"], {"ebs_snapshots": {
+            "code": "AccessDenied", "operation": "DescribeSnapshots", "message": "denied",
+        }})
+        self.assertIn("may still incur charges", report["scope_note"])
+        clients["rds"].get_paginator.assert_called()
+        clients["secretsmanager"].get_paginator.assert_called_once_with("list_secrets")
+
+    def test_known_leftover_with_failed_read_is_still_inconclusive(self):
+        session, clients = empty_session({"describe_snapshots", "describe_db_snapshots"})
+        clients["ec2"].describe_addresses.return_value = {"Addresses": [{
+            "AllocationId": "eip-owned",
+            "Tags": [
+                {"Key": "Project", "Value": check_residual.PROJECT},
+                {"Key": "Lifecycle", "Value": check_residual.LIFECYCLE},
+            ],
+        }]}
+        output = io.StringIO()
+        with (
+            patch.object(sys, "argv", ["check_residual.py"]),
+            patch.object(check_residual.boto3, "Session", return_value=session),
+            contextlib.redirect_stdout(output),
+        ):
+            exit_code = check_residual.main()
+
+        report = json.loads(output.getvalue())
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(report["inventory_status"], "inconclusive")
+        self.assertTrue(report["runtime_resources_remaining"])
+        self.assertEqual(report["resources"]["elastic_ips"], ["eip-owned"])
+        self.assertEqual(set(report["read_errors"]), {"ebs_snapshots", "rds_snapshots"})
+        self.assertEqual(report["resources"]["application_secrets"], [])
+        clients["secretsmanager"].get_paginator.assert_called_once_with("list_secrets")
 
     def test_vpc_inventory_keeps_workload_vpc_when_name_tag_is_missing(self):
         ec2 = Mock()
@@ -184,13 +336,15 @@ class CostGuardTests(unittest.TestCase):
                     patch.object(sys, "argv", ["check_residual.py"]),
                     patch.object(check_residual.boto3, "Session"),
                     patch.object(check_residual, "collect",
-                                 return_value={"workload_kms_keys": [key]}),
+                                 return_value={"resources": {"workload_kms_keys": [key]},
+                                               "read_errors": {}}),
                     contextlib.redirect_stdout(output),
                 ):
                     exit_code = check_residual.main()
                 report = json.loads(output.getvalue())
                 self.assertEqual(exit_code, expected_code)
                 self.assertEqual(report["runtime_resources_remaining"], expected_code == 2)
+                self.assertEqual(report["read_errors"], {})
                 self.assertEqual(
                     report["expected_pending_cleanup"]["workload_kms_keys"],
                     [key] if state == "PendingDeletion" else [],
