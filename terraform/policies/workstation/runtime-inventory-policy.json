@@ -50,8 +50,47 @@
     {
       "Sid": "ReadProjectFoundationalFindings",
       "Effect": "Allow",
-      "Action": "securityhub:GetFindings",
+      "Action": ["securityhub:GetFindings", "securityhub:GetEnabledStandards"],
       "Resource": "arn:aws:securityhub:ap-southeast-1:203888389134:hub/default"
+    },
+    {
+      "Sid": "ReadProjectCertificateMetadata",
+      "Effect": "Allow",
+      "Action": "acm:DescribeCertificate",
+      "Resource": "arn:aws:acm:ap-southeast-1:203888389134:certificate/90db0a99-25a4-4e6d-96e7-0bba09c7e426"
+    },
+    {
+      "Sid": "ReadOwnManagedPolicyAttachments",
+      "Effect": "Allow",
+      "Action": "iam:ListAttachedUserPolicies",
+      "Resource": "arn:aws:iam::203888389134:user/contact-form-deployer"
+    },
+    {
+      "Sid": "ReadProjectTrailDelivery",
+      "Effect": "Allow",
+      "Action": ["cloudtrail:GetTrail", "cloudtrail:GetTrailStatus"],
+      "Resource": "arn:aws:cloudtrail:ap-southeast-1:203888389134:trail/contact-form-management"
+    },
+    {
+      "Sid": "ListSingaporeLogGroupMetadata",
+      "Effect": "Allow",
+      "Action": "logs:DescribeLogGroups",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-southeast-1"
+        }
+      }
+    },
+    {
+      "Sid": "ReadProjectLogDeliveryTimestamps",
+      "Effect": "Allow",
+      "Action": "logs:FilterLogEvents",
+      "Resource": [
+        "arn:aws:logs:ap-southeast-1:203888389134:log-group:/aws/eks/contact-form-eks/cluster",
+        "arn:aws:logs:ap-southeast-1:203888389134:log-group:/aws/rds/instance/contact-form-postgres/postgresql",
+        "arn:aws:logs:ap-southeast-1:203888389134:log-group:/aws/rds/instance/contact-form-postgres/upgrade"
+      ]
     },
     {
       "Sid": "ListProjectAlbAccessLogMetadata",

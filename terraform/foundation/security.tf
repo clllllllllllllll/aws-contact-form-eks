@@ -54,22 +54,23 @@ resource "aws_config_delivery_channel" "main" {
 resource "aws_config_configuration_recorder_status" "main" {
   count      = var.enable_security_services ? 1 : 0
   name       = aws_config_configuration_recorder.main[0].name
-  is_enabled = true
+  is_enabled = !var.pause_config_and_fsbp
   depends_on = [aws_config_delivery_channel.main]
 }
 resource "aws_securityhub_account" "main" {
-  count                    = var.enable_security_services ? 1 : 0
+  count                    = var.enable_security_services && !var.pause_config_and_fsbp ? 1 : 0
   enable_default_standards = false
   depends_on               = [aws_config_configuration_recorder_status.main]
 }
 resource "aws_securityhub_standards_subscription" "fsbp" {
-  count         = var.enable_security_services ? 1 : 0
+  count         = var.enable_security_services && !var.pause_config_and_fsbp ? 1 : 0
   standards_arn = "arn:aws:securityhub:${var.aws_region}::standards/aws-foundational-security-best-practices/v/1.0.0"
   depends_on    = [aws_securityhub_account.main]
 }
 resource "aws_cloudtrail" "management" {
   count                         = var.enable_cloudtrail ? 1 : 0
   name                          = "contact-form-management"
+  enable_logging                = true
   s3_bucket_name                = aws_s3_bucket.evidence.id
   s3_key_prefix                 = "service-logs/cloudtrail"
   include_global_service_events = true

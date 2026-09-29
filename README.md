@@ -1,30 +1,14 @@
 # AWS contact form on EKS
 
-Deploy a Flask contact form from a local workstation. Amazon EKS runs the app, a private Multi-AZ Amazon RDS PostgreSQL instance stores submissions, and AWS Secrets Manager holds database credentials. Terraform provisions AWS infrastructure; Ansible deploys the Kubernetes application and Ingress.
+Terraform provisions a two-AZ VPC, private EKS workers, private Multi-AZ PostgreSQL RDS, Secrets Manager and supporting AWS services. Ansible builds the Flask image, deploys two pods and an Ingress, and installs the AWS Load Balancer Controller that creates the **single public ALB**. When deployed, the application is served at `https://cheelong.xyz/`.
 
-![Two-AZ contact form architecture](docs/architecture.png)
+![Contact form architecture](docs/architecture.png)
 
-The Ingress and AWS Load Balancer Controller create **one** public Application Load Balancer (ALB). Terraform does not create a separate ALB. Visitors use HTTPS; the ALB forwards to private Flask pods, which connect to private RDS with verified TLS. The Kubernetes API is private and is reached from the workstation through Systems Manager and a private relay. See [security controls and evidence](docs/security.md) for the actual boundaries, findings status, and demo exceptions.
+## 1. Prerequisites
 
-## Prerequisites and cost gate
+This repository is configured for account `203888389134`, Region `ap-southeast-1`, IAM profile `contact-form-deployer`, and domain `cheelong.xyz`. Use WSL with AWS CLI, Terraform, Python 3, Docker, Ansible, kubectl, Helm and the Session Manager plugin. The profile must have the reviewed policies in [terraform/policies/](terraform/policies/README.md); policy files alone do not grant access. In this account, the CLI evidence and scoped self-attachment group policies are installed. The temporary managed `ContactFormWorkloadBootstrapTemporary` policy is attached only around the first workload target.
 
-This checkout is configured for account `203888389134`, Region `ap-southeast-1`, domain `cheelong.xyz`, and non-root CLI profile `contact-form-deployer`. Use WSL with AWS CLI, Terraform, Python, Docker, kubectl, Helm, PostgreSQL client tools, Ansible, and the Session Manager plugin. The domain must delegate to the Terraform-managed Route 53 zone, and the foundation's ACM certificate must be `ISSUED` before deploying the Ingress. Another account or domain requires reviewing the backend, IAM, DNS, and policy scopes.
-
-For an optional local form and PostgreSQL rehearsal before AWS work, use the short `make` sequence in [app/README.md](app/README.md). It creates no AWS resources.
-
-From the repository root, check the identity and workstation before any apply:
-
-```bash
-cd /home/limch/projects/aws-contact-form-eks
-export AWS_PROFILE=contact-form-deployer AWS_REGION=ap-southeast-1 AWS_DEFAULT_REGION=ap-southeast-1
-aws sts get-caller-identity --query '{Account:Account,Arn:Arn}' --output json
-aws configure get region --profile "$AWS_PROFILE"
-aws --version && terraform version && kubectl version --client && helm version
-docker info --format '{{.ServerVersion}}'
-session-manager-plugin --version
-```
-
-The account must match `203888389134`; the ARN must identify `contact-form-deployer`, not root. If the AWS session expired, sign in with the configured deployer profile and repeat the identity check. `docker info` verifies WSL access to Docker. Install the pinned Python and Ansible dependencies if needed:
+On a new workstation, run this from the repository root to install dependencies:
 
 ```bash
 python3 -m venv "$HOME/.venvs/assignment"
@@ -33,254 +17,297 @@ python -m pip install --no-cache-dir -r requirements-workstation.txt
 ansible-galaxy collection install -r ansible/requirements.yml
 ```
 
-The 28 September workload deployment and teardown were approved and completed. Before **each new paid deployment**, inspect its fresh saved plan, current Singapore prices, credits, quota, expected runtime, and teardown steps; present the estimate and obtain the owner's confirmation. The earlier planning estimate for a fully running stack was **US$0.50–1.00 per hour**, with a **US$10–20 allowance** for under ten total hours across setup, rehearsals, and demo, before credits and variable charges. Reprice before use; these are not quotes or limits. A configured **US$10 budget** and **US$5 actual-cost email alert** notify but do **not** stop spending. EKS, two NAT gateways, public IPv4, workers, Multi-AZ RDS, ALB, logs, and data transfer drive cost. The state bucket, DNS, evidence storage, logs, and security services can continue to cost money after workload teardown.
-
-### IAM and service policy windows
-
-IAM files under [terraform/policies/](terraform/policies/README.md) are **manual account-access prerequisites**; committing them does not attach them. An administrator must review the published default versions, effective grants, attachment slots, and any boundary or account policy. The temporary first-target grant, named workload service policies, `ContactFormIAMProvisioning`, and short-lived `ContactFormIAMRoleWrites` grant are described in the [Terraform runbook](terraform/README.md#iam-and-service-policy-windows). The workstation helper and residual-inventory policies have separate windows. An IAM denial is a stop-and-review point, not a reason to grant broad access. An administrator must publish the reviewed reusable policy versions once to replace copies bound to destroyed IDs. Future workload rebuilds need fresh plans and short attachment windows, but no generated-ID edits or per-run policy-version changes. The temporary key/secret creation grant remains a deliberate first-target window.
-
-Keep `.local/` plans, verified version inputs, policy copies, kubeconfig, and alias ownership records private and out of Git. Do not put passwords, access keys, Terraform state, or real contact submissions in the repository.
-
-## Deployment runbook
-
-Run the following stages from the repository root. The retained foundation can be reused; the workload is rebuilt for each live session.
-
-## 1. State and retained foundation
-
-### Backend initialization
-
-There are three Terraform roots: `bootstrap/` creates the S3 state bucket and keeps its own local state; `foundation/` holds DNS, certificate, logs, evidence, and security services; `workload/` holds the disposable runtime. Foundation and workload use different keys in the same versioned S3 bucket. Read the [backend and state reconciliation procedure](terraform/README.md#backend-initialization) before initializing from another workstation. Never treat an AWS read error as an empty state bucket.
-
-**For this account:** bootstrap and foundation stages 01–03 already exist. Keep them and verify their state and outputs; do not replay earlier stage files, since their flags can propose deleting later-stage services.
+Then run from the repository root:
 
 ```bash
+cd /home/limch/projects/aws-contact-form-eks
+source "$HOME/.venvs/assignment/bin/activate"
 umask 077
+export AWS_PROFILE=contact-form-deployer AWS_REGION=ap-southeast-1 AWS_DEFAULT_REGION=ap-southeast-1
+export AWS_PAGER=""
+aws sts get-caller-identity --query '{Account:Account,Arn:Arn}' --output json
+aws configure get region --profile "$AWS_PROFILE"
+docker info --format '{{.ServerVersion}}'
+```
+
+Stop unless the account, IAM user and Region match.
+
+**Paid deployment gate:** Estimate current Singapore costs for EKS, workers, NAT, Multi-AZ RDS, ALB and supporting services. Check AWS credits, EC2 vCPU quota, expected runtime and each saved Terraform plan. Obtain the owner's explicit approval before the first paid apply; a budget alert does not stop charges. Keep all plans, Terraform state, verified inputs and kubeconfig out of Git. Never use `-auto-approve` or reuse an old plan.
+
+## 2. Bootstrap and foundation
+
+The three Terraform roots are `terraform/bootstrap` (S3 state bucket), `terraform/foundation` (retained DNS, certificate, logs and security services), and `terraform/workload` (disposable runtime). Foundation and workload use separate S3 state keys.
+
+**Existing configured account:** Bootstrap and foundation stages 01–03 are already deployed. Verify, then continue to section 3. Do not apply an early foundation stage file to the retained foundation.
+
+```bash
 terraform -chdir=terraform/foundation init -input=false
 terraform -chdir=terraform/foundation state list
 terraform -chdir=terraform/foundation output -json
+CERT_ARN="$(terraform -chdir=terraform/foundation output -raw certificate_arn)"
+aws acm describe-certificate --certificate-arn "$CERT_ARN" \
+  --query 'Certificate.{Domain:DomainName,Status:Status}' --output json
 ```
 
-**For a genuinely fresh setup in this configured account only:** first attach the reviewed bucket setup and state-access policies, preserve the local bootstrap state securely, then plan and apply `terraform/bootstrap/`. Review the plan and cost before its apply:
+Continue only when the foundation state contains the expected zone, certificate and security services and the certificate is `ISSUED`.
+
+**Fresh setup only:** An administrator first publishes the reviewed bootstrap state and foundation IAM policies from [terraform/policies](terraform/policies/README.md). Create the state bucket with a fresh, reviewed, approved plan:
 
 ```bash
-umask 077
-mkdir -p .local && chmod 700 .local
+mkdir -p .local
+chmod 700 .local
 terraform -chdir=terraform/bootstrap init -input=false
-BOOTSTRAP_PLAN="$PWD/.local/bootstrap.tfplan"
-git check-ignore -q "$BOOTSTRAP_PLAN" &&
-rm -f -- "$BOOTSTRAP_PLAN" &&
-terraform -chdir=terraform/bootstrap plan -input=false -out="$BOOTSTRAP_PLAN" &&
+BOOTSTRAP_PLAN="$PWD/.local/$(date -u +%Y%m%dT%H%M%SZ)-bootstrap.tfplan"
+terraform -chdir=terraform/bootstrap plan -input=false -out="$BOOTSTRAP_PLAN"
 terraform -chdir=terraform/bootstrap show -no-color "$BOOTSTRAP_PLAN"
 ```
 
-After reviewing the new plan and obtaining approval for this fresh bootstrap setup:
+After reviewing the plan and obtaining the fresh bootstrap cost approval:
 
 ```bash
 terraform -chdir=terraform/bootstrap apply "$BOOTSTRAP_PLAN"
 ```
 
-For an empty foundation state, use `01-base.tfvars`, then choose either the `existing-trail` or `project-trail` branch after checking account ownership of CloudTrail, AWS Config, and Security Hub. Apply stage 02, delegate the Route 53 nameservers at the registrar, verify public delegation, and apply stage 03 from the **same branch** to issue the certificate. A fresh foundation setup needs its own cost review and approval. Use a new saved plan at each stage:
+**First-time setup only.** The current account already has this foundation; go to section 3 for a redeploy. On a new account, review each saved plan and its cost before running the apply command beneath it. Do not run the next stage until the previous one succeeds.
+
+**Stage 01 — base DNS zone, evidence bucket and log groups:**
 
 ```bash
 terraform -chdir=terraform/foundation init -input=false
-FOUNDATION_STAGE=stages/01-base.tfvars  # then 02-security-<branch> and 03-ready-<branch>
-FOUNDATION_PLAN="$PWD/.local/foundation.tfplan"
-git check-ignore -q "$FOUNDATION_PLAN" &&
-rm -f -- "$FOUNDATION_PLAN" &&
-terraform -chdir=terraform/foundation plan -input=false -var-file="$FOUNDATION_STAGE" -out="$FOUNDATION_PLAN" &&
+FOUNDATION_PLAN="$PWD/.local/$(date -u +%Y%m%dT%H%M%SZ)-foundation-01.tfplan"
+terraform -chdir=terraform/foundation plan -input=false -var-file=stages/01-base.tfvars -out="$FOUNDATION_PLAN"
 terraform -chdir=terraform/foundation show -no-color "$FOUNDATION_PLAN"
 ```
 
-After reviewing that stage's new plan and confirming its cost approval, apply it. Set the next stage file and repeat only after checking the prior stage's outputs:
+After reviewing and approving this plan, run `terraform -chdir=terraform/foundation apply "$FOUNDATION_PLAN"`. Get the hosted-zone nameservers with `terraform -chdir=terraform/foundation output -json name_servers` and set them at the domain registrar.
+
+**Stage 02 — Config, Security Hub and CloudTrail:** Check whether these account-wide services already exist. The command below uses the project-managed CloudTrail branch. If this account has an existing trail, use `stages/02-security-existing-trail.tfvars` here and the matching existing-trail file in stage 03.
 
 ```bash
-terraform -chdir=terraform/foundation apply "$FOUNDATION_PLAN"
+FOUNDATION_PLAN="$PWD/.local/$(date -u +%Y%m%dT%H%M%SZ)-foundation-02.tfplan"
+terraform -chdir=terraform/foundation plan -input=false -var-file=stages/02-security-project-trail.tfvars -out="$FOUNDATION_PLAN"
+terraform -chdir=terraform/foundation show -no-color "$FOUNDATION_PLAN"
 ```
 
-Check the exact stage filenames and DNS/certificate gates in the [foundation instructions](terraform/README.md#foundation-stages). Do not run a fresh-setup command against an already managed bucket or zone.
+After reviewing and approving this plan, run `terraform -chdir=terraform/foundation apply "$FOUNDATION_PLAN"`.
 
-## 2. Version preflight and disposable workload
-
-The workload example contains deliberately invalid version placeholders. Choose supported Singapore EKS, add-on, node-release, and relay AMI values, then let preflight verify them and write a mode-600 file. It also checks the effective EC2 vCPU quota and current capacity. The last observed quota was eight Standard On-Demand vCPUs; two `t3.medium` workers and one `t3.micro` relay need six. Recheck at deployment time.
+**Stage 03 — certificate and final foundation settings:** Verify the domain's public nameservers match the Route 53 output before planning this stage.
 
 ```bash
-source "$HOME/.venvs/assignment/bin/activate"
-umask 077
-mkdir -p .local && chmod 700 .local
+FOUNDATION_PLAN="$PWD/.local/$(date -u +%Y%m%dT%H%M%SZ)-foundation-03.tfplan"
+terraform -chdir=terraform/foundation plan -input=false -var-file=stages/03-ready-project-trail.tfvars -out="$FOUNDATION_PLAN"
+terraform -chdir=terraform/foundation show -no-color "$FOUNDATION_PLAN"
+```
+
+After reviewing and approving this plan, run `terraform -chdir=terraform/foundation apply "$FOUNDATION_PLAN"`. Run the ACM check above and wait for `ISSUED`. See [foundation stage details](terraform/README.md#foundation-stages) for account ownership and DNS troubleshooting.
+
+## 3. Deploy the disposable workload
+
+Initialize the workload state and confirm it is empty before a fresh build:
+
+```bash
+terraform -chdir=terraform/workload init -input=false
+terraform -chdir=terraform/workload state list
+```
+
+Prepare current EKS/add-on, node-release, relay AMI and RDS inputs. On this workstation, copy the previous verified file. On a new workstation, use `cp terraform/workload/version-inputs.tfvars.json.example .local/workload-candidate.tfvars.json` instead, then fill its placeholder values with current Singapore choices before preflight:
+
+```bash
+mkdir -p .local
+chmod 700 .local
 cp .local/verified-workload.tfvars.json .local/workload-candidate.tfvars.json
 chmod 600 .local/workload-candidate.tfvars.json
-python3 scripts/preflight.py --profile "$AWS_PROFILE" --versions-file .local/workload-candidate.tfvars.json
-```
-
-The command above rechecks the frozen inputs on this workstation. For an entirely new workstation without the ignored verified file, begin with [the version-input example](terraform/workload/version-inputs.tfvars.json.example), choose supported regional versions and AMIs, and run the same preflight. Do not commit the verified file.
-
-Continue only when preflight reports `READY`:
-
-```bash
-WORKLOAD_VARS="$PWD/.local/verified-workload.tfvars.json"
+python scripts/preflight.py --profile "$AWS_PROFILE" --versions-file .local/workload-candidate.tfvars.json
+export WORKLOAD_VARS="$PWD/.local/verified-workload.tfvars.json"
 test -s "$WORKLOAD_VARS"
-terraform -chdir=terraform/workload init -input=false
 ```
 
-`READY` from preflight writes the verified file. Stop on `BLOCKED` or `INCOMPLETE`; do not use a previous file as proof of current readiness. Check workload state and the S3 backend before the first target. The two targets below are for a **new empty workload**; the 27 September plans must not be reused. The [two-target procedure](terraform/workload/README.md#two-target-first-creation-and-repeatable-iam) gives the exact IAM policy windows and plan checks.
-
-Keep the same shell variables and verified input file through these Terraform stages. In a new terminal, set `AWS_PROFILE`, `AWS_REGION`, and `WORKLOAD_VARS` again before planning.
-
-First, attach the reviewed **temporary** workload bootstrap policy. Plan only the KMS key and app-secret metadata; inspect that these are the only two creates. Confirm the plan fits the existing workload approval and remove the temporary policy immediately after applying, including after a partial failure:
+Continue only on `READY`, with two AZs and at least six free Standard EC2 vCPUs. Create unique plan filenames in the same shell:
 
 ```bash
-FIRST_PLAN="$PWD/.local/workload-first.tfplan"
-git check-ignore -q "$FIRST_PLAN" &&
-rm -f -- "$FIRST_PLAN" &&
-terraform -chdir=terraform/workload plan -input=false -var-file="$WORKLOAD_VARS" \
-  -target=aws_kms_key.eks -target=aws_secretsmanager_secret.app -out="$FIRST_PLAN" &&
-terraform -chdir=terraform/workload show -no-color "$FIRST_PLAN"
+RUN_TAG="$(date -u +%Y%m%dT%H%M%SZ)"
+FIRST_PLAN="$PWD/.local/$RUN_TAG-first.tfplan"
+CLUSTER_PLAN="$PWD/.local/$RUN_TAG-cluster.tfplan"
+FULL_PLAN="$PWD/.local/$RUN_TAG-full.tfplan"
 ```
 
-After reviewing the exact new plan and confirming it is within the approved scope and allowance:
+**First target — EKS encryption key and empty application-secret entry.** The administrator must have published the reviewed Bootstrap policy. Attach it to this deployer, then verify the exact name:
+
+```bash
+BOOTSTRAP_POLICY_ARN=arn:aws:iam::203888389134:policy/ContactFormWorkloadBootstrapTemporary
+aws iam get-policy --policy-arn "$BOOTSTRAP_POLICY_ARN" \
+  --query 'Policy.{ARN:Arn,Version:DefaultVersionId}' --output json
+aws iam attach-user-policy --user-name contact-form-deployer --policy-arn "$BOOTSTRAP_POLICY_ARN"
+aws iam list-attached-user-policies --user-name contact-form-deployer \
+  --query "AttachedPolicies[?PolicyArn=='${BOOTSTRAP_POLICY_ARN}'].PolicyName" --output json
+```
+
+Plan and run the concise read-only plan check:
+
+```bash
+terraform -chdir=terraform/workload plan -input=false -var-file="$WORKLOAD_VARS" \
+  -target=aws_kms_key.eks -target=aws_secretsmanager_secret.app -out="$FIRST_PLAN"
+python scripts/check_plan.py first "$FIRST_PLAN"
+```
+
+The checker must print `PLAN CHECK PASS`. If it fails, stop and inspect `terraform -chdir=terraform/workload show -no-color "$FIRST_PLAN"`. After the current costed deployment is approved, apply the saved plan:
 
 ```bash
 terraform -chdir=terraform/workload apply "$FIRST_PLAN"
 ```
 
-After the temporary policy is detached, verify the new key and secret ARNs and ownership tags against state and live metadata. Confirm the reusable KMS, EKS and secret/ECR policy versions have been published; no ARN replacement is required. Next, plan the cluster target. It can create paid network and EKS dependencies, including two NAT gateways, so review its full dependency list against the costed approval for this deployment:
+**Always detach Bootstrap after this target, including after a failed plan or apply:**
 
 ```bash
-CLUSTER_PLAN="$PWD/.local/workload-cluster.tfplan"
-git check-ignore -q "$CLUSTER_PLAN" &&
-rm -f -- "$CLUSTER_PLAN" &&
-terraform -chdir=terraform/workload plan -input=false -var-file="$WORKLOAD_VARS" \
-  -target=aws_eks_cluster.main -out="$CLUSTER_PLAN" &&
-terraform -chdir=terraform/workload show -no-color "$CLUSTER_PLAN"
+aws iam detach-user-policy --user-name contact-form-deployer --policy-arn "$BOOTSTRAP_POLICY_ARN"
+aws iam list-attached-user-policies --user-name contact-form-deployer \
+  --query "AttachedPolicies[?PolicyArn=='${BOOTSTRAP_POLICY_ARN}'].PolicyName" --output json
 ```
 
-After reviewing this new plan and confirming it is within the approved scope and allowance:
+The last output must be `[]`. The regular KMS and Secrets/ECR policies stay attached.
+
+**Cluster target — VPC, two NAT gateways and private EKS.**
+
+```bash
+terraform -chdir=terraform/workload plan -input=false -var-file="$WORKLOAD_VARS" \
+  -target=aws_eks_cluster.main -out="$CLUSTER_PLAN"
+python scripts/check_plan.py cluster "$CLUSTER_PLAN"
+```
+
+Require `PLAN CHECK PASS` and an expected costed plan before applying:
 
 ```bash
 terraform -chdir=terraform/workload apply "$CLUSTER_PLAN"
+aws eks describe-cluster --name contact-form-eks \
+  --query 'cluster.{Status:status,Version:version,PublicAPI:resourcesVpcConfig.endpointPublicAccess,PrivateAPI:resourcesVpcConfig.endpointPrivateAccess,OIDC:identity.oidc.issuer}' --output json
 ```
 
-Read and verify the cluster's **current** OIDC issuer; Terraform uses it in exact pod-role trust:
+The earlier plan check must have passed. After apply, require `ACTIVE`, public API `false`, private API `true`. Stop on an unexpected action or IAM denial and investigate before continuing.
+
+**Remaining workload — workers, SSM relay, RDS, ECR and IAM/IRSA.**
 
 ```bash
-CLUSTER_NAME="$(terraform -chdir=terraform/workload output -raw cluster_name)"
-OIDC_ISSUER="$(aws eks describe-cluster --region "$AWS_REGION" --name "$CLUSTER_NAME" --query 'cluster.identity.oidc.issuer' --output text)"
-printf '%s\n' "$OIDC_ISSUER"
+terraform -chdir=terraform/workload plan -input=false -var-file="$WORKLOAD_VARS" -out="$FULL_PLAN"
+python scripts/check_plan.py full "$FULL_PLAN"
 ```
 
-The published `ContactFormIAMProvisioning` version already covers this regional 32-character issuer ID. Check its default version and attachment, and confirm there is no pre-existing untagged provider on that issuer path. No policy copy or version change is needed. Confirm the other reviewed service and short-lived role-write grants before planning the rest of the workload. The recent failed node-group creation showed that `iam:GetRole` for the EKS node-group service role needs verification in the effective policy; check it before another paid apply.
-
-Only then create a **fresh full** plan. Review all proposed actions, especially worker count, private RDS settings, IAM, and any replacement or destroy action. Stop on an unexpected action or a cost estimate beyond the approved scope or allowance:
-
-```bash
-FULL_PLAN="$PWD/.local/workload.tfplan"
-git check-ignore -q "$FULL_PLAN" &&
-rm -f -- "$FULL_PLAN" &&
-terraform -chdir=terraform/workload plan -input=false -var-file="$WORKLOAD_VARS" -out="$FULL_PLAN" &&
-terraform -chdir=terraform/workload show -no-color "$FULL_PLAN"
-```
-
-After reviewing this new plan and confirming it is within the approved scope and allowance:
+Require `PLAN CHECK PASS` and an expected costed plan before applying:
 
 ```bash
 terraform -chdir=terraform/workload apply "$FULL_PLAN"
 ```
 
-Before Ansible, show the created infrastructure and both secret identities without reading secret values:
+Before apply, the plan check must confirm two private `t3.medium` workers in separate AZs; a private `t3.micro` relay; private encrypted Multi-AZ PostgreSQL with an RDS-managed master secret; and no replacement or Terraform-created ALB. If the checker fails, inspect `terraform -chdir=terraform/workload show -no-color "$FULL_PLAN"` and stop.
+
+## 4. Verify AWS resources before Ansible
+
+Read only metadata; **never retrieve secret values**:
 
 ```bash
-aws eks describe-cluster --region ap-southeast-1 --name contact-form-eks \
-  --query 'cluster.{status:status,public:resourcesVpcConfig.endpointPublicAccess,private:resourcesVpcConfig.endpointPrivateAccess}'
-aws eks list-nodegroups --region ap-southeast-1 --cluster-name contact-form-eks
-aws rds describe-db-instances --region ap-southeast-1 --db-instance-identifier contact-form-postgres \
-  --query 'DBInstances[0].{status:DBInstanceStatus,engine:Engine,public:PubliclyAccessible,multiAZ:MultiAZ,encrypted:StorageEncrypted}'
-aws rds describe-db-instances --region ap-southeast-1 --db-instance-identifier contact-form-postgres \
-  --query 'DBInstances[0].MasterUserSecret.{arn:SecretArn,status:SecretStatus}'
-aws secretsmanager describe-secret --region ap-southeast-1 \
+aws eks describe-cluster --name contact-form-eks \
+  --query 'cluster.{Status:status,PublicAPI:resourcesVpcConfig.endpointPublicAccess,PrivateAPI:resourcesVpcConfig.endpointPrivateAccess}' --output json
+aws rds describe-db-instances --db-instance-identifier contact-form-postgres \
+  --query 'DBInstances[0].{Status:DBInstanceStatus,Engine:Engine,MultiAZ:MultiAZ,Public:PubliclyAccessible,Encrypted:StorageEncrypted}' --output json
+aws rds describe-db-instances --db-instance-identifier contact-form-postgres \
+  --query 'DBInstances[0].MasterUserSecret.{ARN:SecretArn,Status:SecretStatus}' --output json
+aws secretsmanager describe-secret \
   --secret-id "$(terraform -chdir=terraform/workload output -raw app_secret_arn)" \
-  --query '{name:Name,arn:ARN}'
+  --query '{Name:Name,ARN:ARN}' --output json
 ```
 
-The RDS API shows the active RDS-managed master secret; the deployer cannot directly describe or read that master secret. The app's restricted SQL credential is created by the Ansible database setup Job in the next phase. Verify the new relay's tags and use its current Terraform output for the tunnel. Separate Kubernetes service-account IAM roles give Flask access only to the app secret and the setup Job access to the master secret.
+Require available private encrypted Multi-AZ PostgreSQL and two distinct secret entries. The Ansible setup Job fills the restricted app secret later.
 
-## 3. Deploy through the private EKS API
+## 5. Deploy through the private EKS API
 
-The [Ansible playbook](ansible/README.md) publishes or reuses an immutable ECR image, installs the pinned AWS Load Balancer Controller, creates the restricted database user, and applies the two-replica Deployment, ClusterIP Service, and HTTPS Ingress. The controller creates the physical ALB. Once the Ingress reports its hostname, Ansible adds the DNS alias and waits for a successful public HTTPS readiness request.
-
-In **terminal 1**, leave the authenticated SSM tunnel open:
+In **terminal A**, keep the TLS-verifying SSM tunnel open:
 
 ```bash
 cd /home/limch/projects/aws-contact-form-eks
 source "$HOME/.venvs/assignment/bin/activate"
 export AWS_PROFILE=contact-form-deployer
-python3 scripts/open_tunnel.py
+python scripts/open_tunnel.py --profile "$AWS_PROFILE"
 ```
 
-In **terminal 2**, use its TLS-verifying kubeconfig. `kubectl` verifies private API access and worker placement before Ansible changes the cluster:
+In **terminal B**, check the two Ready workers in different AZs, then run Ansible:
 
 ```bash
 cd /home/limch/projects/aws-contact-form-eks
 source "$HOME/.venvs/assignment/bin/activate"
-export AWS_PROFILE=contact-form-deployer
+export AWS_PROFILE=contact-form-deployer AWS_REGION=ap-southeast-1 AWS_DEFAULT_REGION=ap-southeast-1
+export AWS_PAGER=""
 export KUBECONFIG="$PWD/.local/kubeconfig"
 kubectl --request-timeout=8s get nodes -L topology.kubernetes.io/zone
 ansible-playbook -i ansible/inventory.ini ansible/deploy.yml
 ```
 
-## 4. Verify the application and security evidence
+Ansible publishes the immutable image, creates the restricted SQL user, installs the ALB controller and applies the two-replica Deployment, Service and Ingress. It adds the Route 53 alias after the controller creates the ALB.
 
-Inspect the live application, Ingress and public endpoint:
+## 6. Verify the application and collect evidence
 
 ```bash
 kubectl -n contact-form get deployment,pods,service,ingress -o wide
-kubectl -n contact-form describe ingress contact-form
-curl --head --max-time 15 http://cheelong.xyz/
-curl --fail --silent --show-error https://cheelong.xyz/health/ready
+aws elbv2 describe-load-balancers \
+  --query 'LoadBalancers[].{Name:LoadBalancerName,State:State.Code,DNS:DNSName}' --output json
+curl -I --max-time 15 http://cheelong.xyz/
+curl -I --max-time 15 https://cheelong.xyz/health/ready
 ```
 
-Open `https://cheelong.xyz`, submit **synthetic** name, email, and message data, then prove the row reached PostgreSQL through the temporary readback Job:
+Require two Ready Flask pods, one ClusterIP Service, one Ingress and one active project ALB. HTTP must redirect to HTTPS; HTTPS must validate the certificate and return `200`. In a browser, submit only synthetic data, for example `Demo User`, `demo@example.com`, `Hello from the live demo`. Show the thank-you page, then verify the row and repeat Ansible:
 
 ```bash
 ansible-playbook -i ansible/inventory.ini ansible/verify.yml -e demo_email=demo@example.com
 ansible-playbook -i ansible/inventory.ini ansible/deploy.yml
+python scripts/show_findings.py --profile "$AWS_PROFILE"
 ```
 
-An unchanged Ansible rerun should report `changed=0`. Check credential reuse and row persistence while the same RDS database exists. Record EKS/RDS/ALB settings, pod placement, log delivery, Config and actual Security Hub FSBP findings with timestamps in [security.md](docs/security.md). A `READY` standard subscription is not a passing control. The [read-only evidence policy](terraform/policies/README.md#read-only-demo-evidence-grant) is saved as a group inline policy. Current retained-resource findings are classified in `security.md`; the next live deployment still needs current EKS/RDS findings captured before teardown.
+The readback must match the synthetic submission and the second deploy should report `changed=0`. Capture live EKS, RDS, secret **metadata**, ALB, pod hardening, IRSA, logging, Config and FSBP evidence as described in [security.md](docs/security.md). Save reviewed PNGs under `docs/evidence/`. Do not tear down until the form, row and screenshots are confirmed complete.
 
-## 5. Ordered workload teardown
+## 7. Tear down only the workload
 
-Stop submissions and **keep the SSM tunnel open** while Ansible removes the application DNS alias and Ingress and waits for the controller to delete the ALB. It then removes the controller and Kubernetes resources. Do not destroy EKS or the VPC while the ALB remains. This full cleanup path applies only after Ansible deployment; use the [partial-deployment procedure](terraform/workload/README.md#partial-deployment-teardown-before-ansible) if no Ingress or ALB was ever created.
+Keep the tunnel open while Ansible removes the DNS alias, Ingress and ALB:
 
 ```bash
 ansible-playbook -i ansible/inventory.ini ansible/teardown.yml
 ```
 
-After Ansible confirms that the ALB is gone, close the tunnel. From the repository root, create a fresh destroy plan with the verified version inputs:
+Once the ALB is gone, use a **new** saved destroy plan in the Terraform shell and review it before apply:
 
 ```bash
-umask 077
-WORKLOAD_VARS="${WORKLOAD_VARS:-$PWD/.local/verified-workload.tfvars.json}"
-DESTROY_PLAN="$PWD/.local/workload-destroy.tfplan"
-git check-ignore -q "$DESTROY_PLAN" &&
-rm -f -- "$DESTROY_PLAN" &&
-terraform -chdir=terraform/workload plan -destroy -input=false -var-file="$WORKLOAD_VARS" -out="$DESTROY_PLAN" &&
+DESTROY_PLAN="$PWD/.local/$(date -u +%Y%m%dT%H%M%SZ)-destroy.tfplan"
+terraform -chdir=terraform/workload plan -destroy -input=false -var-file="$WORKLOAD_VARS" -out="$DESTROY_PLAN"
 terraform -chdir=terraform/workload show -no-color "$DESTROY_PLAN"
 ```
 
-After reviewing the exact destroy plan and confirming it excludes foundation resources:
+After reviewing the exact destroy plan and confirming it contains only the disposable workload, apply it. Foundation values listed under **Changes to Outputs** are workload outputs being removed, not foundation resources being destroyed:
 
 ```bash
 terraform -chdir=terraform/workload apply "$DESTROY_PLAN"
+terraform -chdir=terraform/workload state list
+python scripts/check_residual.py --profile "$AWS_PROFILE"
 ```
 
-If a destroy waiter fails after AWS has already deleted a resource, use the [guarded partial-destroy recovery](terraform/workload/README.md#recovery-after-a-partial-destroy). Verify actual absence before reconciling state or releasing an exact project EIP; do not treat an access denial as proof of deletion. After Terraform completes, run the read-only residual inventory:
+The state list must be empty and the scoped residual report must say `no_actionable_resources_observed` with no read errors. Workload teardown deletes RDS submissions and schedules customer KMS keys for deletion; bootstrap and foundation remain and may incur charges.
+
+If the EIP disassociation permission error recurs, the first plan may leave two allocated IPs after the NAT gateways are gone. Inspect the residual report and confirm the project IPs have no association or network interface:
 
 ```bash
-"$HOME/.venvs/assignment/bin/python" scripts/check_residual.py --profile contact-form-deployer
+aws ec2 describe-addresses --filters \
+  Name=tag:Project,Values=aws-contact-form-eks Name=tag:Lifecycle,Values=workload \
+  --query 'Addresses[].{AllocationId:AllocationId,AssociationId:AssociationId,NetworkInterfaceId:NetworkInterfaceId}' --output json
 ```
 
-A full workload destroy deletes RDS and its demo submissions, EKS, NAT gateways, runtime secrets, and ECR; KMS deletion can remain scheduled. The residual checker returns `0` only for no actionable resources in its declared scope, `2` for found resources, and `1` when a read fails. Its latest complete read found no actionable workload resources under the project's names and tags; three project KMS keys were pending deletion. Check actual Billing separately because retained foundation and other resources remain outside this result. For another session, use **new plans, a current costed approval, current Terraform resource outputs, and the same ordered deploy/teardown sequence**. The reusable IAM policy versions need no generated-ID edits.
+Only if the remaining resources are those unassociated EIPs, create a **new** saved plan. Review that it deletes only `aws_eip.nat` before applying it:
 
-## Final cleanup of retained resources
+```bash
+RETRY_PLAN="$PWD/.local/$(date -u +%Y%m%dT%H%M%SZ)-destroy-eips.tfplan"
+terraform -chdir=terraform/workload plan -destroy -input=false -var-file="$WORKLOAD_VARS" -out="$RETRY_PLAN"
+terraform -chdir=terraform/workload show -no-color "$RETRY_PLAN"
+```
 
-Workload destroy deliberately leaves the state bucket and foundation. The Route 53 zone and ACM certificate may support later use of `cheelong.xyz`; evidence storage, log groups, Config, Security Hub, and CloudTrail have separate ownership and may keep charging. Review actual resource ownership, billing, S3 object versions, and a separate foundation/bootstrap teardown plan before removing them. Preserve unrelated account security services. The [residual inventory notes](scripts/README.md#residual-inventory-and-retained-costs) explain what the workload checker cannot prove.
+```bash
+terraform -chdir=terraform/workload apply "$RETRY_PLAN"
+terraform -chdir=terraform/workload state list
+python scripts/check_residual.py --profile "$AWS_PROFILE"
+```
+
+Stop and investigate if another resource remains, any read fails, or the retry plan includes anything beyond the EIPs. Never reuse a partly applied plan or remove state to conceal a live resource.

@@ -1,0 +1,34 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadOnlyReviewedTemporaryPolicies",
+      "Effect": "Allow",
+      "Action": ["iam:GetPolicy", "iam:GetPolicyVersion"],
+      "Resource": [
+        "arn:aws:iam::203888389134:policy/ContactFormWorkloadBootstrapTemporary",
+        "arn:aws:iam::203888389134:policy/ContactFormFoundationStandby"
+      ],
+      "Condition": {
+        "ArnEquals": {
+          "aws:PrincipalArn": "arn:aws:iam::203888389134:user/contact-form-deployer"
+        }
+      }
+    },
+    {
+      "Sid": "AttachAndDetachOnlyOwnReviewedTemporaryPolicies",
+      "Effect": "Allow",
+      "Action": ["iam:AttachUserPolicy", "iam:DetachUserPolicy"],
+      "Resource": "arn:aws:iam::203888389134:user/contact-form-deployer",
+      "Condition": {
+        "ArnEquals": {
+          "aws:PrincipalArn": "arn:aws:iam::203888389134:user/contact-form-deployer",
+          "iam:PolicyARN": [
+            "arn:aws:iam::203888389134:policy/ContactFormWorkloadBootstrapTemporary",
+            "arn:aws:iam::203888389134:policy/ContactFormFoundationStandby"
+          ]
+        }
+      }
+    }
+  ]
+}

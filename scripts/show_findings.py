@@ -2,6 +2,7 @@
 
 import argparse
 from collections import Counter
+from datetime import datetime, timezone
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -124,6 +125,8 @@ def project_rows(client):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", default="contact-form-deployer")
+    parser.add_argument("--summary", action="store_true",
+                        help="show concise counts and failed control IDs")
     args = parser.parse_args()
     try:
         session = boto3.Session(profile_name=args.profile, region_name=REGION)
@@ -134,7 +137,20 @@ def main():
         parser.exit(1, f"Security Hub read failed ({code}); no findings report produced.\n")
 
     print(f"ACTIVE FSBP project findings | account {ACCOUNT} | {REGION}")
-    if rows:
+    if args.summary:
+        print(f"Snapshot UTC: {datetime.now(timezone.utc):%Y-%m-%d %H:%M}")
+        passed_workload = sorted({
+            control for control, status, _, _ in rows
+            if status == "PASSED" and control.startswith(("EKS.", "RDS.", "ELB."))
+        })
+        print("Passing EKS/RDS/ALB controls: "
+              + (", ".join(passed_workload) or "none observed"))
+        failures = Counter(control for control, status, _, _ in rows
+                           if status == "FAILED")
+        print("Failed control | Finding count")
+        for control, count in sorted(failures.items()):
+            print(f"{control} | {count}")
+    elif rows:
         print("Control | Status | Resource | UpdatedAt")
         for control, status, resource_id, updated_at in rows:
             print(f"{control} | {status} | {resource_id} | {updated_at}")

@@ -35,3 +35,8 @@ variable "enable_cloudtrail" {
   description = "Create a project trail only if the account lacks suitable management-event coverage."
   type        = bool
 }
+variable "pause_config_and_fsbp" {
+  description = "For a later demo standby, stop the existing Config recorder and disable Security Hub/FSBP while retaining their configuration and keeping the project management trail logging."
+  type        = bool
+  default     = false
+}
